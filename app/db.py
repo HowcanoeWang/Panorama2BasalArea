@@ -60,7 +60,7 @@ class DataBase:
 
     def get_img_info(self):
         self.curs.execute('select img_id, img_name, width, height, default_baf from ImageInfo')
-        img_info = {'img_id':[],'img_name':[],'width':[],'height':[],'baf':[], 'in_num':[], 'ba':[]}
+        img_info = {'img_id': [], 'img_name': [], 'width': [], 'height': [], 'baf': [], 'in_num': [], 'ba': []}
         for r in self.curs.fetchall():
             img_info['img_id'].append(r[0])
             img_info['img_name'].append(r[1])
@@ -111,13 +111,13 @@ class DataBase:
         default_baf = self.curs.fetchall()[0][0]
 
         self.curs.execute('select tree_id, lx, ly, rx, ry, max_baf from TreeInfo where img_id = ?', [img_id])
-        tree_info = {'tree_id':[], 'left':[], 'right':[], 'width':[], 'state':[]}
+        tree_info = {'tree_id': [], 'left': [], 'right': [], 'width': [], 'state': []}
         for ti in self.curs.fetchall():
             tree_info['tree_id'].append(ti[0])
             tree_info['left'].append([ti[1], ti[2]])
             tree_info['right'].append([ti[3], ti[4]])
             tree_info['width'].append(self._length_calculator(ti[1], ti[2], ti[3], ti[4]))
-            tree_info['state'].append(ti[5] >= default_baf) # max_baf > default_baf
+            tree_info['state'].append(ti[5] >= default_baf)   # max_baf > default_baf
 
         return tree_info
 
@@ -140,12 +140,13 @@ if __name__ == '__main__':
         os.remove('test.sqlite')
     db = DataBase()
     # testing add img
-    db.add_img(r'D:\OneDrive\Documents\3_UNB\3_Graduate\[PROJ].Estimating Biomass\Newfoundland_Data\Newfoundland_Panorama\Cormack\R1_S00\COR R1 S00 0 16.JPG')
-    db.add_img(r'D:\OneDrive\Documents\3_UNB\3_Graduate\[PROJ].Estimating Biomass\Newfoundland_Data\Newfoundland_Panorama\Cormack\R1_S00\COR R1 S00 0 26.JPG')
+    db.add_img(r'..\test_images\COR R1 S00 0 16.JPG')
+    db.add_img(r'..\test_images\COR R1 S00 1 16.JPG')
     # testing remove img
     db.rm_img(0)
     # testing add img to discontinuous img_id
-    db.add_img(r'D:\OneDrive\Documents\3_UNB\3_Graduate\[PROJ].Estimating Biomass\Newfoundland_Data\Newfoundland_Panorama\Cormack\R1_S00\COR R1 S00 0 36.JPG')
+    db.add_img(r'..\test_images\COR R1 S12 0 16.JPG')
+    db.add_img(r'..\test_images\COR R1 S12 1 16.JPG')
     # testing edit baf info
     db.edit_img_baf(img_id=1, baf=3.4)
     # try to update non exist img
@@ -160,8 +161,8 @@ if __name__ == '__main__':
     # test update tree info
     db.edit_tree(tree_id=3, lx=240, ly=430, rx=261, ry=430)
     # test getting infos from db for gui.py
-    img_info = db.get_img_info()
-    tree_info = db.get_tree_info(img_id=2)
-    print(img_info)
-    print(tree_info)
+    img = db.get_img_info()
+    tree = db.get_tree_info(img_id=2)
+    print(img)
+    print(tree)
     db.commit()
