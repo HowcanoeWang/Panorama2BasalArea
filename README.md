@@ -1,5 +1,26 @@
 # Panorama2BasalArea
 Calculate forest BA values from spherical(panorama) images by manual tree selection.
+![ui](images/readme/ui.png)
+
+## Backgrounds
+**Basal area** is the area of a given section of land that is occupied by the cross-section of tree trunks and stems at the base
+
+![basal area](https://www.canr.msu.edu/uploads/236/76842/f2.PNG)
+
+An **Angle gauge** is a tool used by foresters to determine which trees to measure when using a variable radius plot design in forest inventory. Using this tool a forester can quickly measure the trees that are in or out of the plot
+
+![field work](https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/Anglegaugeuse.JPG/200px-Anglegaugeuse.JPG)
+
+To be more specific, the angle gauge does the thing like this:
+
+![overlook](https://upload.wikimedia.org/wikipedia/commons/2/29/WZP-8.png)
+
+If a tree exceed the given angle, it is counted as "in" tree, the Basal Area (BA) can be simply calculated by:
+BA = in tree num * BAF, where BAF is basal area factor determined by angle size. 
+
+If we have a panorama photo in forest, it can be simplified by counting the tree pixel width to determine whether it is "in" or "out", 
+that is the reason why we develop this software.
+
 
 ## Main functions:
 1. project management based on sqlite database.

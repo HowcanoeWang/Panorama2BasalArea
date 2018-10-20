@@ -117,7 +117,11 @@ class DataBase:
             tree_info['left'].append([ti[1], ti[2]])
             tree_info['right'].append([ti[3], ti[4]])
             tree_info['width'].append(self._length_calculator(ti[1], ti[2], ti[3], ti[4]))
-            tree_info['state'].append(ti[5] >= default_baf)   # max_baf > default_baf
+            if ti[5] >= default_baf:
+                state = 'in'
+            else:
+                state = 'out'
+            tree_info['state'].append(state)
 
         return tree_info
 
@@ -140,13 +144,13 @@ if __name__ == '__main__':
         os.remove('test.sqlite')
     db = DataBase()
     # testing add img
-    db.add_img(r'..\test_images\COR R1 S00 0 16.JPG')
-    db.add_img(r'..\test_images\COR R1 S00 1 16.JPG')
+    db.add_img(r'..\images\examples\COR R1 S00 0 16.JPG')
+    db.add_img(r'..\images\examples\COR R1 S00 1 16.JPG')
     # testing remove img
     db.rm_img(0)
     # testing add img to discontinuous img_id
-    db.add_img(r'..\test_images\COR R1 S12 0 16.JPG')
-    db.add_img(r'..\test_images\COR R1 S12 1 16.JPG')
+    db.add_img(r'..\images\examples\COR R1 S12 0 16.JPG')
+    db.add_img(r'..\images\examples\COR R1 S12 1 16.JPG')
     # testing edit baf info
     db.edit_img_baf(img_id=1, baf=3.4)
     # try to update non exist img
