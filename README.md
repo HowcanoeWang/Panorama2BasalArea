@@ -18,7 +18,9 @@ To be more specific, the angle gauge does the thing like this:
 If a tree exceed the given angle, it is counted as "in" tree, the Basal Area (BA) can be simply calculated by:
 BA = in tree num * BAF, where BAF is basal area factor determined by angle size. 
 
-If we have a panorama photo in forest, it can be simplified by counting the tree pixel width to determine whether it is "in" or "out", 
+If we have a panorama photo in forest like this:
+![panorama](https://image.shutterstock.com/image-photo/forest-panorama-260nw-474773707.jpg)
+it can be simplified by counting the tree pixel width to determine whether it is "in" or "out", 
 that is the reason why we develop this software.
 
 
@@ -35,12 +37,13 @@ that is the reason why we develop this software.
 
 ## Operations
 ### 1. Project management
-1. `File` > `New`: create a new project
-1. `File` > `open`: open a former project
-1. `File` > `save`: save changes to current project
+1. `File` > `New`: create a new project (`Ctrl` + `N`)
+1. `File` > `open`: open a former project (`Ctrl` + `O`)
+1. `File` > `save`: save changes to current project (`Ctrl` + `S`)
 1. `File` > `export`: export results to a excel file
 
 ### 2. Image management
+
 1. `Add img`: add spherical image to this project
     Dialog: Add by folder? [Yes/No/Cancel]
     * `Yes`: select folder first, then type keywords in image name need to import.

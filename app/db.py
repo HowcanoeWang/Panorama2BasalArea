@@ -7,33 +7,45 @@ from ba import plot_ba_calculator, max_baf
 
 class DataBase:
 
-    def __init__(self, db_path='test.sqlite'):
-        if not os.path.exists(db_path):  # create a new db
-            self.conn = sqlite3.connect(db_path)
-            self.curs = self.conn.cursor()
+    db_path = 'test.sqlite'
 
-            self.curs.execute('''
-                CREATE TABLE ImageInfo (
-                    img_id INT NOT NULL PRIMARY KEY,
-                    img_dir CHAR(256) NOT NULL,
-                    img_name CHAR(64) NOT NULL, 
-                    width INT NOT NULL, 
-                    height INT NOT NULL, 
-                    default_baf REAL NOT NULL DEFAULT 2)''')
-            self.curs.execute('''
-                CREATE TABLE TreeInfo (
-                    tree_id INT NOT NULL PRIMARY KEY,
-                    img_id INT NOT NULL,
-                    lx INT NOT NULL,
-                    ly INT NOT NULL,
-                    rx INT NOT NULL,
-                    ry INT NOT NULL,
-                    max_baf REAL NOT NULL,
-                        FOREIGN KEY (img_id) REFERENCES ImageInfo(img_id))''')
-            self.conn.commit()
+    def __init__(self, db_path='test.sqlite'):
+        if not os.path.exists(db_path):
+            self.create_db(db_path)
         else:  # open a table
             self.conn = sqlite3.connect(db_path)
             self.curs = self.conn.cursor()
+
+    def create_db(self, db_path):
+        self.conn = sqlite3.connect(db_path)
+        self.curs = self.conn.cursor()
+
+        self.curs.execute('''
+            CREATE TABLE ImageInfo (
+                img_id INT NOT NULL PRIMARY KEY,
+                img_dir CHAR(256) NOT NULL,
+                img_name CHAR(64) NOT NULL, 
+                width INT NOT NULL, 
+                height INT NOT NULL, 
+                default_baf REAL NOT NULL DEFAULT 2)''')
+        self.curs.execute('''
+            CREATE TABLE TreeInfo (
+                tree_id INT NOT NULL PRIMARY KEY,
+                img_id INT NOT NULL,
+                lx INT NOT NULL,
+                ly INT NOT NULL,
+                rx INT NOT NULL,
+                ry INT NOT NULL,
+                max_baf REAL NOT NULL,
+                    FOREIGN KEY (img_id) REFERENCES ImageInfo(img_id))''')
+        self.conn.commit()
+        self.db_path = db_path
+
+    def change_db(self, db_path):
+        self.conn.close()
+        self.conn = sqlite3.connect(db_path)
+        self.curs = self.conn.cursor()
+        self.db_path = db_path
 
     def add_img(self, img_path):
         im = Image.open(img_path)
@@ -151,8 +163,8 @@ if __name__ == '__main__':
     # testing add img to discontinuous img_id
     db.add_img(r'..\images\examples\COR R1 S12 0 16.JPG')
     db.add_img(r'..\images\examples\COR R1 S12 1 16.JPG')
-    # testing edit baf info
-    db.edit_img_baf(img_id=1, baf=3.4)
+    # testing edit baf info without trees
+    db.edit_img_baf(img_id=1, baf=3)
     # try to update non exist img
     db.edit_img_baf(0, 3.4)
     # add trees to test
@@ -164,9 +176,10 @@ if __name__ == '__main__':
     db.rm_tree(tree_id=0)
     # test update tree info
     db.edit_tree(tree_id=3, lx=240, ly=430, rx=261, ry=430)
-    # test getting infos from db for gui.py
-    img = db.get_img_info()
-    tree = db.get_tree_info(img_id=2)
-    print(img)
-    print(tree)
+    # test getting info from db for gui.py
+    print(db.get_img_info())
+    print(db.get_tree_info(img_id=2))
+    # testing edit baf info and change tree info at the same time
+    db.edit_img_baf(img_id=2, baf=300)
+    print(db.get_tree_info(img_id=2))
     db.commit()
