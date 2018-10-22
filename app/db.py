@@ -54,7 +54,7 @@ class DataBase:
         img_name = os.path.splitext(img_name_ext)[0]
 
         self.curs.execute('select MAX(img_id) from ImageInfo')
-        max_id = self.curs.fetchall()[0][0]
+        max_id = self.curs.fetchone()[0]
         if max_id is None:
             img_id = 0
         else:
@@ -69,6 +69,9 @@ class DataBase:
 
     def edit_img_baf(self, img_id, baf):
         self.curs.execute('update ImageInfo set default_baf = ? where img_id = ?', [baf, img_id])
+
+    def edit_img_baf_all(self, baf):
+        self.curs.execute('update ImageInfo set default_baf = ?', [baf])
 
     def get_img_info(self):
         self.curs.execute('select img_id, img_name, width, height, default_baf from ImageInfo')
@@ -89,38 +92,44 @@ class DataBase:
 
         return img_info
 
-    def add_tree(self, img_id, lx, ly, rx, ry):
+    def add_tree(self, img_id, lx, ly, rx, ry, return_value=False):
         self.curs.execute('select MAX(tree_id) from TreeInfo')
-        max_id = self.curs.fetchall()[0][0]
+        max_id = self.curs.fetchone()[0]
         if max_id is None:
             tree_id = 0
         else:
             tree_id = max_id + 1
 
         self.curs.execute('select width from ImageInfo where img_id = ?', [img_id])
-        img_width = self.curs.fetchall()[0][0]
-        baf_max = self._tree_calculator(lx, ly, rx, ry, img_width)
+        img_width = self.curs.fetchone()[0]
+        baf_max = self.max_baf_calculator(lx, ly, rx, ry, img_width)
 
         self.curs.execute('insert into TreeInfo values (?,?,?,?,?,?,?)',
                           (tree_id, img_id, lx, ly, rx, ry, baf_max))
+        width = self.length_calculator(lx, ly, rx, ry)
+        if return_value:
+            return tree_id, width, baf_max  # same order as get_tree_info
 
     def rm_tree(self, tree_id):
         self.curs.execute('delete from TreeInfo where tree_id = ?', [tree_id])
 
-    def edit_tree(self, tree_id, lx, ly, rx, ry):
+    def edit_tree(self, tree_id, lx, ly, rx, ry, return_value=False):
         self.curs.execute('select img_id from TreeInfo where tree_id = ?', [tree_id])
-        img_id = self.curs.fetchall()[0][0]
+        img_id = self.curs.fetchone()[0]
         self.curs.execute('select width from ImageInfo where img_id = ?', [img_id])
-        img_width = self.curs.fetchall()[0][0]
+        img_width = self.curs.fetchone()[0]
 
-        baf_max = self._tree_calculator(lx, ly, rx, ry, img_width)
+        width = self.length_calculator(lx, ly, rx, ry)
+        baf_max = self.max_baf_calculator(lx, ly, rx, ry, img_width)
 
         self.curs.execute('update TreeInfo set lx = ?, ly = ?, rx = ?, ry = ?, max_baf = ? where tree_id = ?',
                           [lx, ly, rx, ry, baf_max, tree_id])
+        if return_value:
+            return width, baf_max
 
     def get_tree_info(self, img_id):
         self.curs.execute('select default_baf from ImageInfo where img_id = ?', [img_id])
-        default_baf = self.curs.fetchall()[0][0]
+        default_baf = self.curs.fetchone()[0]
 
         self.curs.execute('select tree_id, lx, ly, rx, ry, max_baf from TreeInfo where img_id = ?', [img_id])
         tree_info = {'tree_id': [], 'left': [], 'right': [], 'width': [], 'state': []}
@@ -128,7 +137,7 @@ class DataBase:
             tree_info['tree_id'].append(ti[0])
             tree_info['left'].append([ti[1], ti[2]])
             tree_info['right'].append([ti[3], ti[4]])
-            tree_info['width'].append(self._length_calculator(ti[1], ti[2], ti[3], ti[4]))
+            tree_info['width'].append(self.length_calculator(ti[1], ti[2], ti[3], ti[4]))
             if ti[5] >= default_baf:
                 state = 'in'
             else:
@@ -140,13 +149,13 @@ class DataBase:
     def commit(self):
         self.conn.commit()
 
-    def _tree_calculator(self, lx, ly, rx, ry, img_width):
-        diameter_pixel = self._length_calculator(lx, ly, rx, ry)
+    def max_baf_calculator(self, lx, ly, rx, ry, img_width):
+        diameter_pixel = self.length_calculator(lx, ly, rx, ry)
         baf_max = max_baf(img_width, diameter_pixel)
         return baf_max
 
     @staticmethod
-    def _length_calculator(lx, ly, rx, ry):
+    def length_calculator(lx, ly, rx, ry):
         return int(sqrt((lx - rx) ** 2 + (ly - ry) ** 2))
 
 

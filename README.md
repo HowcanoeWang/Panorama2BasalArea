@@ -54,12 +54,12 @@ that is the reason why we develop this software.
     **Warning**: this operation will also delete all tree records in this image as well.
 1. `left-click` on image name: show this image and its trees information
 1. `double-click` on image name: change default BAF value of this image (default is 2)
-1. `triple-click` on image name: change all images' default BAF values at once.
+1. `double-right-click` on image name: change all images' default BAF values at once.
 
 ### 3. Tree management
 1. Add trees
     1. `ctrl` + `mousewhell`: zoom images to proper size
-    1. Press `N` switching to adding tree mode (cursor will change to +)
+    1. Press `Space` switching to adding tree mode (cursor will change to +)
     1. `left-click` to add the first point of tree boundary
     1. `move` to another boundary, `left-click` for another boundary point
         * if the line between two points color is **red**, currently is **out** tree
