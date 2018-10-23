@@ -27,9 +27,11 @@ from tkinter.simpledialog import askstring, askfloat
 from tkinter.filedialog import asksaveasfilename, askopenfilename, askdirectory
 from tkinter.messagebox import askokcancel, showwarning, askyesno, askyesnocancel
 from tkinter.ttk import Treeview, Progressbar
-# from PIL import Image
-# from PIL.ImageTk import PhotoImage
+from PIL import Image, ImageDraw
+from PIL.ImageTk import PhotoImage
+from PIL.ImageOps import equalize
 from db import DataBase
+from numpy import ones
 from ba import plot_ba_calculator, max_baf
 
 
@@ -37,7 +39,7 @@ class Pano2BA(Tk):
 
     saved = True
     title_name = 'Panorama2BA'
-    img_info = {'img_id': [], 'img_name': [], 'width': [], 'height': [], 'baf': [], 'in_num': [], 'ba': []}
+    img_info = {'img_id': [], 'img_dir': [], 'img_name': [], 'width': [], 'height': [], 'baf': [], 'in_num': [], 'ba': []}
     tree_info = {'tree_id': [], 'left': [], 'right': [], 'width': [], 'state': []}
 
     def __init__(self):
@@ -94,9 +96,9 @@ class Pano2BA(Tk):
         self.img_table_bar.config(command=self.img_table.yview, bg='white')
         self.img_table.config(yscrollcommand=self.img_table_bar.set)
 
-        self.tree_table.column('No.', width=50, anchor='center')
+        self.tree_table.column('No.', width=40, anchor='center')
         self.tree_table.column('Width', width=50, anchor='center')
-        self.tree_table.column('State', width=50, anchor='center')
+        self.tree_table.column('State', width=45, anchor='center')
         self.tree_table.heading('No.', text='No.')
         self.tree_table.heading('Width', text='Width')
         self.tree_table.heading('State', text='State')
@@ -114,8 +116,8 @@ class Pano2BA(Tk):
         self.bind('<KeyPress-Shift_L>', self.ScrolledCanvas.press_shift)
         self.bind('<KeyRelease-Shift_L>', self.ScrolledCanvas.release_shift)
 
-        self.img_table.bind('<Double-Button-1>', self.change_baf)
-        self.img_table.bind('<Double-Button-3>', self.change_baf_all)
+        self.img_table.bind('<Button-3>', self.change_baf)
+        self.img_table.bind('<Button-2>', self.change_baf_all)
 
         # ====================
         #  packing components
@@ -210,6 +212,7 @@ class Pano2BA(Tk):
                                         db.add_img(img_dir)
                                         self.update_progress(int(100 * i / length))
                                     self.refresh_img_table()
+                                    self.open_img_project()
                                     self.make_unsaved()
                                     self.update_progress(100)
                         else:  # cancel adding
@@ -221,6 +224,7 @@ class Pano2BA(Tk):
                     self.update_progress(50)
                     self.progressbar.update()
                     self.refresh_img_table()
+                    self.open_img_project()
                     self.update_progress(100)
                     self.make_unsaved()
 
@@ -267,9 +271,10 @@ class Pano2BA(Tk):
 
         rm_img_id_list = []
         rm_img_name_list = []
-        for table_id in selections:
-            img_id = self.img_info['img_id'][int(table_id)]
-            img_name = self.img_info['img_name'][int(table_id)]
+        for str_img_id in selections:
+            img_id = int(str_img_id)
+            img_table_row = self.img_info['img_id'].index(img_id)
+            img_name = self.img_info['img_name'][img_table_row]
             rm_img_id_list.append(img_id)
             rm_img_name_list.append(img_name)
 
@@ -279,9 +284,11 @@ class Pano2BA(Tk):
         if confirm:
             for i, img_id in enumerate(rm_img_id_list):
                 db.rm_img(img_id)
-                steps = int(80 * i / length)
+                steps = int(70 * i / length)
                 self.update_progress(20 + steps)
             self.refresh_img_table()
+            self.update_progress(95)
+            self.open_img_project()
             self.make_unsaved()
             self.update_progress(100)
         else:  # cancel remove
@@ -291,21 +298,24 @@ class Pano2BA(Tk):
         if self.del_img_btn['state'] == 'normal':  # have data in img_table
             baf = askfloat('Change BAF', 'Input the BAF value (float, e.g. 2.0) changing to:')
             if baf is not None:
+                self.update_progress(50)
                 db.edit_img_baf(self.ScrolledCanvas.img_id, baf)
                 self.local_refresh_img_table(baf)
-                self.open_img_project()
+                self.refresh_tree_table()
+                self.ScrolledCanvas.open_img(reload=False)
+                self.update_progress(100)
                 self.make_unsaved()
                 
     def change_baf_all(self, event=None):
         if self.del_img_btn['state'] == 'normal':  # have data in img_table
-            if self.saved == False:
+            if not self.saved:
                 asksave = askyesnocancel("Warning", "You changes have not been saved, save it? \n"
                                                     "[Cancel] to cancel changing all BAFs, \n"
                                                     "[No] to changing all BAFs without saving current changes")
                 print(asksave)
                 if asksave is None:
                     return
-                if asksave == True:
+                if asksave:  # == True
                     self.MenuBar.save_project()
 
             baf = askfloat('Change all BAFs', 'Input the BAF value (float, e.g. 2.0) changing all the images to:')
@@ -314,8 +324,9 @@ class Pano2BA(Tk):
                                     str(baf) + '?\nThis operation can not undo.')
                 if confirm2:
                     db.edit_img_baf_all(baf)
-                    app.refresh_img_table()
-                    app.ScrolledCanvas.open_img()
+                    self.refresh_img_table()
+                    self.refresh_tree_table()
+                    self.ScrolledCanvas.open_img(reload=False)
                     self.make_unsaved()
 
     def del_tree(self, event=None):
@@ -325,19 +336,20 @@ class Pano2BA(Tk):
         # update img_table information
         selections = self.img_table.selection()
         if len(selections) == 1:  # not multiple selection
-            img_table_id = selections[0]
+            img_id = int(selections[0])
+            img_table_row =  self.img_info['img_id'].index(img_id)
             in_tree_num = self.tree_info['state'].count('in')
             ba = plot_ba_calculator(baf, in_tree_num)
-            self.img_info['baf'][int(img_table_id)] = baf
-            self.img_info['in_num'][int(img_table_id)] = in_tree_num
-            self.img_info['ba'][int(img_table_id)] = ba
+            self.img_info['baf'][img_table_row] = baf
+            self.img_info['in_num'][img_table_row] = in_tree_num
+            self.img_info['ba'][img_table_row] = ba
 
             # update img_table
-            values = [self.img_info['img_name'][int(img_table_id)],
-                      self.img_info['baf'][int(img_table_id)],
-                      self.img_info['in_num'][int(img_table_id)],
-                      self.img_info['ba'][int(img_table_id)]]
-            self.img_table.item(img_table_id, values=values)
+            values = [self.img_info['img_name'][img_table_row],
+                      self.img_info['baf'][img_table_row],
+                      self.img_info['in_num'][img_table_row],
+                      self.img_info['ba'][img_table_row]]
+            self.img_table.item(img_id, values=values)
 
     def refresh_img_table(self):
         # clear table info
@@ -350,16 +362,12 @@ class Pano2BA(Tk):
             for i in range(length):
                 img_values = [self.img_info['img_name'][i], self.img_info['baf'][i],
                               self.img_info['in_num'][i], self.img_info['ba'][i]]
-                self.img_table.insert('', 'end', iid=str(i), values=img_values)
-            self.img_table.selection_set('0')
-
-            self.ScrolledCanvas.img_id = self.img_info['img_id'][0]
-            self.ScrolledCanvas.baf = self.img_info['baf'][0]
-            self.ScrolledCanvas.img_width = self.img_info['width'][0]
-            self.ScrolledCanvas.img_height = self.img_info['height'][0]
-            self.refresh_tree_table()
+                self.img_table.insert('', 'end', iid=str(self.img_info['img_id'][i]), values=img_values)
+            self.img_table.selection_set(str(self.img_info['img_id'][0]))
         else:  # no img data, empty project
             self.del_img_btn.config(state='disabled')
+            self.refresh_tree_table()
+            self.ScrolledCanvas.initialize(clean_canvas=True)
 
     def refresh_tree_table(self):
         # clear table info
@@ -373,25 +381,31 @@ class Pano2BA(Tk):
                 # here start counting tree number (display in tree_table) from 1
                 tree_values = [i+1, self.tree_info['width'][i], self.tree_info['state'][i]]
                 # but the actual tree index start from 0 in software
-                self.tree_table.insert('', 'end', iid=str(i), values=tree_values)
+                self.tree_table.insert('', 'end', iid=str(self.tree_info['tree_id'][i]), values=tree_values)
         else:
             self.del_tree_btn.config(state='disabled')
 
-    def open_img_project(self, event=None):
+    def open_img_project(self, event=None, force_fresh=False):
         if self.del_img_btn['state'] == 'normal':  # ensure it is not an empty list
             selections = self.img_table.selection()
             if len(selections) == 1:  # not multiple selection
-                self.ScrolledCanvas.img_id = self.img_info['img_id'][int(selections[0])]
-                self.ScrolledCanvas.baf = self.img_info['baf'][int(selections[0])]
-                self.ScrolledCanvas.img_width = self.img_info['width'][int(selections[0])]
-                self.ScrolledCanvas.img_height = self.img_info['height'][int(selections[0])]
-                self.refresh_tree_table()
-                self.update_progress(30)
-                self.ScrolledCanvas.open_img()
-                self.update_progress(100)
+                img_id = int(selections[0])
+                img_table_row = self.img_info['img_id'].index(img_id)
+                # check if click on the older one
+                new_img_id = self.img_info['img_id'][img_table_row]
+                if new_img_id != self.ScrolledCanvas.img_id or force_fresh:  # click not the same
+                    self.ScrolledCanvas.img_id = self.img_info['img_id'][img_table_row]
+                    self.ScrolledCanvas.img_dir = self.img_info['img_dir'][img_table_row]
+                    self.ScrolledCanvas.baf = self.img_info['baf'][img_table_row]
+                    self.ScrolledCanvas.img_width = self.img_info['width'][img_table_row]
+                    self.ScrolledCanvas.img_height = self.img_info['height'][img_table_row]
+                    self.refresh_tree_table()
+                    self.update_progress(30)
+                    self.ScrolledCanvas.open_img(reload=True)
+                    self.update_progress(100)
+
 
 class MenuBar(Frame):
-
     def __init__(self, parent=None):
         Frame.__init__(self, parent)
         self.pack()
@@ -415,12 +429,22 @@ class MenuBar(Frame):
         self.cbutton.config(menu=self.export, bg='white')
 
     def new_project(self, event=None):
+        ans = True
+        if not app.saved:
+            ans = askyesnocancel('Warning', 'Changes not saved, save current changes[Y], discard changes[N], or cancel?')
+
+        if ans is None:  # cancel
+            return
+        elif ans:  # save changes
+            self.save_project()
+
         project_dir = asksaveasfilename(title='New project', defaultextension=".sqlite", initialdir='.',
                                         filetypes=[('Pano2ba project', '.sqlite')])
         if project_dir != '':
             print(project_dir)
             if project_dir[-7:] == '.sqlite':
                 app.add_img_btn.config(state='normal')
+                app.del_img_btn.config(state='disabled')
                 app.title_name = project_dir[:20] + '...' + project_dir[-30:]
                 app.update_title()
                 app.update_progress(20)
@@ -434,30 +458,46 @@ class MenuBar(Frame):
                     os.remove('~default.sqlite')
                 app.update_progress(70)
 
+                app.img_table.delete(*app.img_table.get_children())
+                app.tree_table.delete(*app.tree_table.get_children())
+                app.ScrolledCanvas.initialize(clean_canvas=True)
+
                 self.file.entryconfigure('Save', state="normal")
                 app.update_progress(100)
 
     def open_project(self, event=None):
+        ans = True
+        if not app.saved:
+            ans = askyesnocancel('Warning',
+                                 'Changes not saved, save current changes[Y], discard changes[N], or cancel?')
+
+        if ans is None:  # cancel
+            return
+        elif ans:  # save changes
+            self.save_project()
+
         project_dir = askopenfilename(title='Open project', initialdir='.', filetypes=[('Pano2ba project', '.sqlite')])
         if project_dir != '':
             former_db_path = db.db_path
             db.change_db(project_dir)
             # check if is the pano2ba project db
             db.curs.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            app.update_progress(20)
+            app.update_progress(5)
             if db.curs.fetchall() == [('ImageInfo',), ('TreeInfo',)]:
                 app.add_img_btn.config(state='normal')
                 app.title_name = project_dir[:20] + '...' + project_dir[-30:]
                 app.update_title()
-                app.update_progress(50)
+                app.update_progress(10)
 
                 if os.path.exists('~default.sqlite'):
                     os.remove('~default.sqlite')
-                app.update_progress(70)
+                app.update_progress(15)
+
                 # loading img_info
                 app.refresh_img_table()
-                app.update_progress(90)
-                app.ScrolledCanvas.open_img()
+                app.update_progress(20)
+
+                app.open_img_project(force_fresh=True)
                 app.update_progress(100)
             else:
                 db.change_db(former_db_path)
@@ -488,14 +528,18 @@ class ScrolledCanvas(Frame):
     shift_hold = False
     move_point = False
 
-    moving = {'fixed_p': [0, 0], 'line': 'line_id', 'move_p': 'point_id', 'tree_row': 0}
-    shape_ids = {'point1': [], 'line': [], 'point2': []}  # default, point1 is left, point2 is right
+    moving = {'fixed_p': [0, 0], 'line': 'line_id', 'move_p': 'point_id',
+              'text': 'text_id', 'tree_row': 0}
+    shape_ids = {'point1': [], 'line': [], 'point2': [], 'text': [], 'canvas_img': None}  # default, point1 is left, point2 is right
 
     # record current img
-    img_id = 0
+    img_id = -1
+    img_dir = ''
     baf = 2
-    img_width = 1
-    img_on_canvas = None
+    img_width = 1000
+    img_height = 800
+    save_image = None  # preprocess photos = PIL.Image()
+    save_photo = None  # zoomed photo shows in canvas = tk.PhotoImage()
 
     def __init__(self, parent=None):
         Frame.__init__(self, parent)
@@ -513,7 +557,8 @@ class ScrolledCanvas(Frame):
         self.canvas.bind('<B1-Motion>', self.hold_move_mouse)
         self.canvas.bind('<Motion>', self.move_mouse)
         self.canvas.bind('<ButtonRelease-1>', self.left_loose)
-        self.canvas.bind('<MouseWheel>', self.mouse_wheel)
+        self.canvas.bind('<MouseWheel>', self.xbar_scroll)
+        self.canvas.bind('<Control-MouseWheel>', self.zoom)
         self.canvas.bind("<Enter>", self.on_enter)
         self.canvas.bind("<Leave>", self.on_leave)
 
@@ -521,14 +566,16 @@ class ScrolledCanvas(Frame):
         self.hbar.pack(side='bottom', fill='x')
         self.canvas.pack(side='top', fill='both', expand='yes')
 
+        imarray = ones((10, 10, 3)) * 255
+        im = Image.fromarray(imarray.astype('uint8')).convert("RGBA")
+        photo_im = PhotoImage(im)
+        self.shape_ids['canvas_img'] = self.canvas.create_image(0, 0, image=photo_im, anchor='nw')
+
     # ========================
     #  functions used outside
     # ========================
-    def open_img(self):
-        # step0: load image and image equalization
-        # step1: clear canvas
-        # step2: draw dealt image
-        # step3: draw trees and update self.shapes_ids; init moving and other ctrl params
+    def initialize(self, clean_canvas=False):
+        # functions used to
         self.add_tree = False
         self.add_tree_lock = False
         self.zoom_ratio = 1
@@ -536,38 +583,83 @@ class ScrolledCanvas(Frame):
         self.shift_hold = False
         self.move_point = False
 
-        self.moving = {'fixed_p': [0, 0], 'line': 'line_id', 'move_p': 'point_id', 'tree_row': 0}
-        self.shape_ids = {'point1': [], 'line': [], 'point2': []}
+        # clear canvas trees record
+        self._clear_canvas_all_trees()
+        self.shape_ids['point1'] = []
+        self.shape_ids['point2'] = []
+        self.shape_ids['line'] = []
+        self.shape_ids['text'] = []
 
+        if clean_canvas:
+            self.img_id = -1
+            self.img_dir = ''
+            self.baf = 2
+            self.img_width = 1000
+            self.img_height = 800
+            self.save_image = None
+            self.save_photo = None
+
+            imarray = ones((10, 10, 3)) * 255
+            im = Image.fromarray(imarray.astype('uint8')).convert("RGBA")
+            self.save_photo = PhotoImage(im)
+            self._update_img()
+
+    def open_img(self, reload=True):
+        # step0: clear canvas
+        # step1: load image and image equalization
+        # step2: draw dealt image
+        # step3: draw trees and update self.shapes_ids; init moving and other ctrl params
+        self.initialize(clean_canvas=False)
+        app.update_progress(45)
+
+        # step 0
+        if reload:
+            self._preprocess_img()
+            app.update_progress(60)
+            self._resize_img()
+            app.update_progress(70)
+            self._update_img()
+        else:
+            self._resize_img()
+            self._update_img()
+
+        self._change_canvas_position(0, self.save_photo.height() / 2)
         # step 1
-        self.canvas.delete('all')
-        # step 2
+        app.update_progress(80)
 
         # step 3: draw trees
-        for tree_row in range(len(app.tree_info['tree_id'])):
+        tree_num = len(app.tree_info['tree_id'])
+        for tree_row in range(tree_num):
             x1, y1 = app.tree_info['left'][tree_row]
             x2, y2 = app.tree_info['right'][tree_row]
             if app.tree_info['state'][tree_row] == 'out':
                 line = self.canvas.create_line(x1, y1, x2, y2, fill='red', width=3)
             else:
                 line = self.canvas.create_line(x1, y1, x2, y2, fill='blue', width=3)
-            point1 = self.canvas.create_oval(x1 - 5, y1 - 5, x1 + 5, y1 + 5, fill='green', outline='green')
-            point2 = self.canvas.create_oval(x2 - 5, y2 - 5, x2 + 5, y2 + 5, fill='green', outline='green')
+            point1 = self.canvas.create_oval(x1 - 5, y1 - 5, x1 + 5, y1 + 5, fill='yellow', outline='black')
+            point2 = self.canvas.create_oval(x2 - 5, y2 - 5, x2 + 5, y2 + 5, fill='yellow', outline='black')
+            text_x = (x1 + x2) / 2
+            text_y = (y1 + y2) / 2
+            text = self.canvas.create_text(text_x, text_y, text=str(tree_row+1), fill='yellow', font=('Times', '12', 'bold'))
 
             self.shape_ids['point1'].append(point1)
             self.shape_ids['point2'].append(point2)
             self.shape_ids['line'].append(line)
+            self.shape_ids['text'].append(text)
+
+            progress = 20 * (tree_row / tree_num)
+            app.update_progress(80 + progress)
 
     def open_create_tree_mode(self, event):
         # press 'space' changing to adding tree mode
-        if self.img_on_canvas is None:  # todo testing mode, remember to remove in distribute version
-            if self.add_tree == False:
+        if app.del_img_btn['state'] == 'normal':  # ensure have img data
+            if not self.add_tree:  # not in add tree mode
                 self.add_tree = True
                 print('creating mode open')
                 if self.mouse_in_canvas:
                     self.config(cursor='tcross')
             else:
-                if self.add_tree_lock == False:
+                if not self.add_tree_lock:  # not in the second tree
                     self.add_tree = False
                     print('creating mode close')
                     self.config(cursor='arrow')
@@ -587,18 +679,23 @@ class ScrolledCanvas(Frame):
             x = self.canvas.canvasx(event.x)
             y = self.canvas.canvasy(event.y)
             app.make_unsaved()
-            if self.add_tree_lock == False:  # click for the first time
+            if not self.add_tree_lock:  # click for the first time
+                number = len(self.shape_ids['point1'])
+
                 line = self.canvas.create_line(x, y, x, y, fill='red', width=3)
-                point1 = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill='green', outline='green')
-                point2 = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill='green', outline='green')
+                point1 = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill='yellow', outline='black')
+                point2 = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill='yellow', outline='black')
+                text = self.canvas.create_text(x, y, text=str(number + 1), fill='yellow', font=('Times', '12', 'bold'))
 
                 self.moving['fixed_p'] = [x, y]
                 self.moving['line'] = line
                 self.moving['move_p'] = point2
+                self.moving['text'] = text
 
                 self.shape_ids['point1'].append(point1)
                 self.shape_ids['point2'].append(point2)
                 self.shape_ids['line'].append(line)
+                self.shape_ids['text'].append(text)
 
                 self.add_tree_lock = True
             else:  # click for the second time
@@ -615,18 +712,20 @@ class ScrolledCanvas(Frame):
 
     def move_mouse(self, event):
         if self.add_tree_lock:  # draw lines follow mouse, only works when clicking the second point
-            x, y = event.x, event.y
+            x = self.canvas.canvasx(event.x)
+            y = self.canvas.canvasy(event.y)
             self._update_shape_info(x, y)
 
     def hold_move_mouse(self, event):
         # only activated when press left and not loose
         x = self.canvas.canvasx(event.x)
         y = self.canvas.canvasy(event.y)
-        if self.add_tree == False:  # make sure not in adding tree mode
-            if self.move_point == False:  # find new points
+        if not self.add_tree:  # make sure not in adding tree mode
+            if not self.move_point:  # find new points
                 id_touched = event.widget.find_closest(x, y, halo=5)
                 if id_touched:  # except canvas empty get nothing
-                    if id_touched[0] not in self.shape_ids['line']:  # not touch the line
+                    # not touch the line and text item
+                    if id_touched[0] in self.shape_ids['point1'] or id_touched[0] in self.shape_ids['point2']:
                         [center_x, center_y] = self._get_shape_center(id_touched[0])
                         if (center_x - x) ** 2 + (center_y - y) ** 2 <= 25:  # make sure touch in points
                             # find which tree record it belongs to
@@ -664,8 +763,11 @@ class ScrolledCanvas(Frame):
         self.shift_hold = False
         print(self.shift_hold)
 
-    def mouse_wheel(self, event):
-        print('wheel')
+    def xbar_scroll(self, event):
+        scroll = -1 if event.delta > 0 else 1
+        self.canvas.xview_scroll(scroll, 'units')
+
+    def zoom(self, event):
         pass
 
     # ------------------
@@ -697,7 +799,7 @@ class ScrolledCanvas(Frame):
                 app.del_tree_btn.config(state='normal')
 
             tree_values = [length, width, state]
-            app.tree_table.insert('', 'end', iid=str(length - 1), values=tree_values)
+            app.tree_table.insert('', 'end', iid=str(tree_id), values=tree_values)
 
         else:  # mode=='edit'
             tree_row = self.moving['tree_row']
@@ -721,7 +823,7 @@ class ScrolledCanvas(Frame):
             app.tree_info['state'][tree_row] = state
 
             tree_values = [tree_row + 1, width, state]
-            app.tree_table.item(str(tree_row), values=tree_values)
+            app.tree_table.item(str(app.tree_info['tree_id'][tree_row]), values=tree_values)
             
         app.local_refresh_img_table(self.baf)
 
@@ -730,21 +832,26 @@ class ScrolledCanvas(Frame):
         x0, y0 = self.moving['fixed_p']
         line = self.moving['line']
         move_p = self.moving['move_p']
+        text = self.moving['text']
+
         if not self.shift_hold:  # horizontal lock
             y = y0
         tree_width = db.length_calculator(x0, y0, x, y)
         baf_max = max_baf(self.img_width, tree_width)
 
+        text_x = (x0 + x) / 2
+        text_y = (y0 + y) / 2
         self.canvas.coords(line, [x0, y0, x, y])
         self.canvas.coords(move_p, [x - 5, y - 5, x + 5, y + 5])
+        self.canvas.coords(text, [text_x, text_y])
 
         # change line colors
         if baf_max >= self.baf:
             # in tree
-            self.canvas.itemconfig(line, fill='blue')
+            self.canvas.itemconfigure(line, fill='blue')
         else:
             # out tree
-            self.canvas.itemconfig(line, fill='red')
+            self.canvas.itemconfigure(line, fill='red')
 
     def _get_shape_center(self, shape_id):
         # return the tree edge points (oval) center coordinate as a fixed point
@@ -759,18 +866,22 @@ class ScrolledCanvas(Frame):
             row_num = self.shape_ids['point1'].index(shape_id)
             line_id = self.shape_ids['line'][row_num]
             fixed_id = self.shape_ids['point2'][row_num]
+            text = self.shape_ids['text'][row_num]
             self.moving['line'] = line_id
             self.moving['move_p'] = shape_id
             self.moving['fixed_p'] = self._get_shape_center(fixed_id)
             self.moving['tree_row'] = row_num
+            self.moving['text'] = text
         if shape_id in self.shape_ids['point2']:
             row_num = self.shape_ids['point2'].index(shape_id)
             line_id = self.shape_ids['line'][row_num]
             fixed_id = self.shape_ids['point1'][row_num]
+            text = self.shape_ids['text'][row_num]
             self.moving['line'] = line_id
             self.moving['move_p'] = shape_id
             self.moving['fixed_p'] = self._get_shape_center(fixed_id)
             self.moving['tree_row'] = row_num
+            self.moving['text'] = text
 
     def _zoom_in(self):
         pass
@@ -778,17 +889,64 @@ class ScrolledCanvas(Frame):
     def _zoom_out(self):
         pass
 
-    def _zoom_img(self):
-        pass
-
     def _refresh_shapes(self):
         pass
 
-    def _change_canvas_position(self):
-        pass
+    def _clear_canvas_one_trees(self, tree_row):
+        # clear canvas
+        self.canvas.delete(self.shape_ids['point1'][tree_row])
+        self.canvas.delete(self.shape_ids['point2'][tree_row])
+        self.canvas.delete(self.shape_ids['line'][tree_row])
+        self.canvas.delete(self.shape_ids['text'][tree_row])
 
-    def _strength_img(self, img_id):
-        pass
+        # todo: refresh app.tree_table but not redraw
+
+    def _clear_canvas_all_trees(self):
+        for i in range(len(self.shape_ids['point1'])):
+            self._clear_canvas_one_trees(i)
+
+    def _change_canvas_position(self, center_x, center_y):
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        print(canvas_height, canvas_width)
+        img_width = self.save_photo.width()
+        img_height = self.save_photo.height()
+        print(img_width, img_height)
+
+        x = (center_x - 0.5 * canvas_width) / img_width
+        y = (center_y - 0.5 * canvas_height) / img_height
+
+        final_x = min(max(0, x), 1)
+        final_y = min(max(0, y), 1)
+
+        self.canvas.xview_moveto(final_x)
+        self.canvas.yview_moveto(final_y)
+
+    def _update_img(self):
+        self.canvas.itemconfig(self.shape_ids['canvas_img'], image=self.save_photo)
+        width = self.save_photo.width()
+        height = self.save_photo.height()
+        self.canvas.config(scrollregion=(0, 0, width, height))
+
+    def _preprocess_img(self):
+        image = Image.open(self.img_dir)
+        image = equalize(image)
+        # draw center reference line
+        draw = ImageDraw.Draw(image)
+        draw.line([0, image.size[1] / 2, image.size[0], image.size[1] / 2], fill=(255, 255, 0))
+
+        self.save_image = image
+
+    def _resize_img(self):
+        width, height = self.save_image.size
+        if self.zoom_ratio < 1.0:
+            filter = Image.ANTIALIAS
+        else:
+            filter = Image.BICUBIC
+
+        img_zoom = self.save_image.resize((int(width * self.zoom_ratio),
+                                           int(height * self.zoom_ratio)), filter)
+        self.save_photo = PhotoImage(img_zoom)
 
     def _update_canvas_img(self, bg_img):
         pass

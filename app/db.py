@@ -74,14 +74,15 @@ class DataBase:
         self.curs.execute('update ImageInfo set default_baf = ?', [baf])
 
     def get_img_info(self):
-        self.curs.execute('select img_id, img_name, width, height, default_baf from ImageInfo')
-        img_info = {'img_id': [], 'img_name': [], 'width': [], 'height': [], 'baf': [], 'in_num': [], 'ba': []}
+        self.curs.execute('select img_id, img_dir, img_name, width, height, default_baf from ImageInfo')
+        img_info = {'img_id': [], 'img_dir': [], 'img_name': [], 'width': [], 'height': [], 'baf': [], 'in_num': [], 'ba': []}
         for r in self.curs.fetchall():
             img_info['img_id'].append(r[0])
-            img_info['img_name'].append(r[1])
-            img_info['width'].append(r[2])
-            img_info['height'].append(r[3])
-            img_info['baf'].append(r[4])
+            img_info['img_dir'].append(r[1])
+            img_info['img_name'].append(r[2])
+            img_info['width'].append(r[3])
+            img_info['height'].append(r[4])
+            img_info['baf'].append(r[5])
 
         for img_id, baf in zip(img_info['img_id'], img_info['baf']):
             self.curs.execute('select tree_id from TreeInfo where img_id = ? and max_baf >= ?', [img_id, baf])
@@ -129,20 +130,24 @@ class DataBase:
 
     def get_tree_info(self, img_id):
         self.curs.execute('select default_baf from ImageInfo where img_id = ?', [img_id])
-        default_baf = self.curs.fetchone()[0]
+        default_baf = self.curs.fetchone()
 
-        self.curs.execute('select tree_id, lx, ly, rx, ry, max_baf from TreeInfo where img_id = ?', [img_id])
         tree_info = {'tree_id': [], 'left': [], 'right': [], 'width': [], 'state': []}
-        for ti in self.curs.fetchall():
-            tree_info['tree_id'].append(ti[0])
-            tree_info['left'].append([ti[1], ti[2]])
-            tree_info['right'].append([ti[3], ti[4]])
-            tree_info['width'].append(self.length_calculator(ti[1], ti[2], ti[3], ti[4]))
-            if ti[5] >= default_baf:
-                state = 'in'
-            else:
-                state = 'out'
-            tree_info['state'].append(state)
+
+        if default_baf is not None:
+            default_baf = default_baf[0]
+            self.curs.execute('select tree_id, lx, ly, rx, ry, max_baf from TreeInfo where img_id = ?', [img_id])
+
+            for ti in self.curs.fetchall():
+                tree_info['tree_id'].append(ti[0])
+                tree_info['left'].append([ti[1], ti[2]])
+                tree_info['right'].append([ti[3], ti[4]])
+                tree_info['width'].append(self.length_calculator(ti[1], ti[2], ti[3], ti[4]))
+                if ti[5] >= default_baf:
+                    state = 'in'
+                else:
+                    state = 'out'
+                tree_info['state'].append(state)
 
         return tree_info
 

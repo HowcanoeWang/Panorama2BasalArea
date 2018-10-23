@@ -53,8 +53,8 @@ that is the reason why we develop this software.
 1. `Del img`: remove the selected image from this project
     **Warning**: this operation will also delete all tree records in this image as well.
 1. `left-click` on image name: show this image and its trees information
-1. `double-click` on image name: change default BAF value of this image (default is 2)
-1. `double-right-click` on image name: change all images' default BAF values at once.
+1. `right-click` on image name: change default BAF value of this image (default is 2)
+1. `mouse-wheel-click` on image name: change all images' default BAF values at once.
 
 ### 3. Tree management
 1. Add trees
