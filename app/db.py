@@ -32,10 +32,10 @@ class DataBase:
             CREATE TABLE TreeInfo (
                 tree_id INT NOT NULL PRIMARY KEY,
                 img_id INT NOT NULL,
-                lx INT NOT NULL,
-                ly INT NOT NULL,
-                rx INT NOT NULL,
-                ry INT NOT NULL,
+                lx REAL NOT NULL,
+                ly REAL NOT NULL,
+                rx REAL NOT NULL,
+                ry REAL NOT NULL,
                 max_baf REAL NOT NULL,
                     FOREIGN KEY (img_id) REFERENCES ImageInfo(img_id))''')
         self.conn.commit()
@@ -92,6 +92,26 @@ class DataBase:
             img_info['ba'].append(ba)
 
         return img_info
+
+    def get_img_info_baf_range(self, baf_list):
+        self.curs.execute('select img_id, img_name from ImageInfo')
+        img_info_all = {'img_id':[], 'img_name':[], 'baf_num_ba':[]}
+        for r in self.curs.fetchall():
+            img_info_all['img_id'].append(r[0])
+            img_info_all['img_name'].append(r[1])
+
+        for img_id in img_info_all['img_id']:
+            baf_num_ba = []
+            for baf in baf_list:
+                self.curs.execute('select tree_id from TreeInfo where img_id =? and max_baf >= ?', [img_id, baf])
+                in_num = len(self.curs.fetchall())
+                ba = plot_ba_calculator(baf, in_num)
+                baf_num_ba.append(ba)
+                baf_num_ba.append(in_num)
+
+            img_info_all['baf_num_ba'].append(baf_num_ba)
+
+        return img_info_all
 
     def add_tree(self, img_id, lx, ly, rx, ry, return_value=False):
         self.curs.execute('select MAX(tree_id) from TreeInfo')
@@ -150,6 +170,17 @@ class DataBase:
                 tree_info['state'].append(state)
 
         return tree_info
+
+    def get_tree_info_all(self):
+        self.curs.execute('select img_id, tree_id, lx, ly, rx, ry, max_baf from TreeInfo order by img_id')
+        tree_info_all = {'img_id':[], 'tree_id':[], 'width':[], 'max_baf':[]}
+        for item in self.curs.fetchall():
+            tree_info_all['img_id'].append(item[0])
+            tree_info_all['tree_id'].append(item[1])
+            tree_info_all['width'].append(self.length_calculator(item[2], item[3], item[4], item[5]))
+            tree_info_all['max_baf'].append(item[6])
+
+        return tree_info_all
 
     def commit(self):
         self.conn.commit()

@@ -1,0 +1,1 @@
+cd C:\Users\Waston\Documents\pyinstaller && env\pano2ba\Scripts\activate && pyinstaller -i C:\Users\Waston\Documents\GitHub\Pano2BA\icon.ico -w -F C:\Users\Waston\Documents\GitHub\Pano2BA\gui.py && deactivate

@@ -22,17 +22,20 @@ GUI class structure:
 ############################################################################
 """
 import os
-from tkinter import Tk, Button, Menubutton, Menu, Canvas, Scrollbar, Label, Frame
+import sys
+import xlwt
+import traceback
+from tkinter import Tk, Button, Menubutton, Menu, Canvas, Scrollbar, Label, Frame, TclError
 from tkinter.simpledialog import askstring, askfloat
 from tkinter.filedialog import asksaveasfilename, askopenfilename, askdirectory
-from tkinter.messagebox import askokcancel, showwarning, askyesno, askyesnocancel
+from tkinter.messagebox import askokcancel, showwarning, showinfo, showerror, askyesno, askyesnocancel
 from tkinter.ttk import Treeview, Progressbar
 from PIL import Image, ImageDraw
 from PIL.ImageTk import PhotoImage
 from PIL.ImageOps import equalize
 from db import DataBase
-from numpy import ones
-from ba import plot_ba_calculator, max_baf
+from numpy import ones, arange
+from ba import plot_ba_calculator, max_baf, in_tree_pixel
 
 
 class Pano2BA(Tk):
@@ -45,7 +48,6 @@ class Pano2BA(Tk):
     def __init__(self):
         Tk.__init__(self)
 
-        self.update_title()
         self.config(bg='white')
         self.protocol("WM_DELETE_WINDOW", self.quit_save_confirm)
         self.wm_state('zoomed')  # maximize windows
@@ -73,7 +75,7 @@ class Pano2BA(Tk):
         self.tree_label = Label(self.right_frame, text="Tree Management Panel")
         self.tree_table = Treeview(self.right_frame, show="headings", columns=('No.', 'Width', 'State'))
         self.tree_table_bar = Scrollbar(self.right_frame)
-        self.del_tree_btn = Button(self.right_frame, text="Del tree(s)", state='disabled')
+        self.del_tree_btn = Button(self.right_frame, text="Del tree(s)", state='disabled', command=self.del_tree)
 
         self.ScrolledCanvas = ScrolledCanvas(self)
 
@@ -109,15 +111,19 @@ class Pano2BA(Tk):
         self.bind('<Control-n>', self.MenuBar.new_project)
         self.bind('<Control-o>', self.MenuBar.open_project)
         self.bind('<Control-s>', self.MenuBar.save_project)
-        self.img_table.bind('<ButtonRelease-1>', self.open_img_project)
 
         # connect to the control of Scrolled Canvas
         self.bind('<space>', self.ScrolledCanvas.open_create_tree_mode)
         self.bind('<KeyPress-Shift_L>', self.ScrolledCanvas.press_shift)
         self.bind('<KeyRelease-Shift_L>', self.ScrolledCanvas.release_shift)
+        self.bind('<KeyRelease-Control_L>', self.ScrolledCanvas.refresh_zoomed_image)
+        self.bind('<KeyPress-r>', self.ScrolledCanvas.press_r)
 
+        self.img_table.bind('<ButtonRelease-1>', self.open_img_project)
         self.img_table.bind('<Button-3>', self.change_baf)
         self.img_table.bind('<Button-2>', self.change_baf_all)
+
+        self.tree_table.bind('<ButtonRelease-1>', self.center_tree)
 
         # ====================
         #  packing components
@@ -142,6 +148,8 @@ class Pano2BA(Tk):
 
         self.ScrolledCanvas.pack(side='top', fill='both', expand='yes')
 
+        self.update_title()
+
     def make_unsaved(self):
         self.saved = False
         self.update_title()
@@ -151,8 +159,12 @@ class Pano2BA(Tk):
             title_suffix = ''
         else:
             title_suffix = '* (Not saved)'
+        if self.ScrolledCanvas.zoom_ratio != 1:
+            title_zoom = ' [' + str(self.ScrolledCanvas.zoom_ratio * 100)[:3] + '%]'
+        else:
+            title_zoom = ''
 
-        full_title = self.title_name + title_suffix
+        full_title = self.title_name + title_suffix + title_zoom
         self.title(full_title)
 
     def quit_save_confirm(self):
@@ -222,7 +234,6 @@ class Pano2BA(Tk):
                 if img_dir != '':
                     db.add_img(img_dir)
                     self.update_progress(50)
-                    self.progressbar.update()
                     self.refresh_img_table()
                     self.open_img_project()
                     self.update_progress(100)
@@ -271,8 +282,8 @@ class Pano2BA(Tk):
 
         rm_img_id_list = []
         rm_img_name_list = []
-        for str_img_id in selections:
-            img_id = int(str_img_id)
+        for iid in selections:
+            img_id = int(iid)
             img_table_row = self.img_info['img_id'].index(img_id)
             img_name = self.img_info['img_name'][img_table_row]
             rm_img_id_list.append(img_id)
@@ -298,11 +309,13 @@ class Pano2BA(Tk):
         if self.del_img_btn['state'] == 'normal':  # have data in img_table
             baf = askfloat('Change BAF', 'Input the BAF value (float, e.g. 2.0) changing to:')
             if baf is not None:
-                self.update_progress(50)
+                self.update_progress(10)
                 db.edit_img_baf(self.ScrolledCanvas.img_id, baf)
                 self.local_refresh_img_table(baf)
+                self.update_progress(40)
                 self.refresh_tree_table()
-                self.ScrolledCanvas.open_img(reload=False)
+                self.update_progress(70)
+                self.ScrolledCanvas.open_img(reload=False, recenter=False)
                 self.update_progress(100)
                 self.make_unsaved()
                 
@@ -312,7 +325,6 @@ class Pano2BA(Tk):
                 asksave = askyesnocancel("Warning", "You changes have not been saved, save it? \n"
                                                     "[Cancel] to cancel changing all BAFs, \n"
                                                     "[No] to changing all BAFs without saving current changes")
-                print(asksave)
                 if asksave is None:
                     return
                 if asksave:  # == True
@@ -326,18 +338,45 @@ class Pano2BA(Tk):
                     db.edit_img_baf_all(baf)
                     self.refresh_img_table()
                     self.refresh_tree_table()
-                    self.ScrolledCanvas.open_img(reload=False)
+                    self.ScrolledCanvas.open_img(reload=False, recenter=False)
                     self.make_unsaved()
 
     def del_tree(self, event=None):
-        pass
+        confirm = askyesno('warning', 'Are you sure to remove selected trees?')
+        if confirm:
+            selections = self.tree_table.selection()
+            length = len(selections)
+            for i, iid in enumerate(selections):
+                tree_id = int(iid)
+                db.rm_tree(tree_id)
+                steps = int(90 * i / length)
+                self.update_progress(steps)
+            self.refresh_tree_table()
+            self.local_refresh_img_table(baf=self.ScrolledCanvas.baf)
+            self.update_progress(95)
+            self.ScrolledCanvas.open_img(reload=False, recenter=False)
+            self.update_progress(100)
+            self.make_unsaved()
+        else:  # cancel remove
+            self.update_progress(100)
+
+    def center_tree(self, event=None):
+        selections = self.tree_table.selection()
+        if len(selections) == 1:  # select one tree
+            tree_id = int(selections[0])
+            tree_row = self.tree_info['tree_id'].index(tree_id)
+            x1, y1 = self.tree_info['left'][tree_row]
+            x2, y2 = self.tree_info['right'][tree_row]
+            center_x = (x1 + x2) / 2 * self.ScrolledCanvas.zoom_ratio
+            center_y = (y1 + y2) / 2 * self.ScrolledCanvas.zoom_ratio
+            self.ScrolledCanvas.change_canvas_position(center_x, center_y)
     
     def local_refresh_img_table(self, baf):
         # update img_table information
         selections = self.img_table.selection()
         if len(selections) == 1:  # not multiple selection
             img_id = int(selections[0])
-            img_table_row =  self.img_info['img_id'].index(img_id)
+            img_table_row = self.img_info['img_id'].index(img_id)
             in_tree_num = self.tree_info['state'].count('in')
             ba = plot_ba_calculator(baf, in_tree_num)
             self.img_info['baf'][img_table_row] = baf
@@ -401,8 +440,10 @@ class Pano2BA(Tk):
                     self.ScrolledCanvas.img_height = self.img_info['height'][img_table_row]
                     self.refresh_tree_table()
                     self.update_progress(30)
+                    self.ScrolledCanvas.zoom_ratio = 1.0
                     self.ScrolledCanvas.open_img(reload=True)
                     self.update_progress(100)
+                    self.update_title()
 
 
 class MenuBar(Frame):
@@ -421,12 +462,12 @@ class MenuBar(Frame):
         self.file.add_command(label='Save', command=self.save_project, underline=1, state='disabled')
         self.fbutton.config(menu=self.file, bg='white')
 
-        self.cbutton = Menubutton(self.menubar, text='Export', underline=0, state='disabled')
-        self.cbutton.pack(side='left')
-        self.export = Menu(self.cbutton, tearoff=False)
+        self.ebutton = Menubutton(self.menubar, text='Export', underline=0, state='disabled')
+        self.ebutton.pack(side='left')
+        self.export = Menu(self.ebutton, tearoff=False)
         self.export.add_command(label='Default BAF', command=self.default_baf_export, underline=0)
         self.export.add_command(label='BAF sequence', command=self.sequence_baf_export, underline=0)
-        self.cbutton.config(menu=self.export, bg='white')
+        self.ebutton.config(menu=self.export, bg='white')
 
     def new_project(self, event=None):
         ans = True
@@ -441,7 +482,6 @@ class MenuBar(Frame):
         project_dir = asksaveasfilename(title='New project', defaultextension=".sqlite", initialdir='.',
                                         filetypes=[('Pano2ba project', '.sqlite')])
         if project_dir != '':
-            print(project_dir)
             if project_dir[-7:] == '.sqlite':
                 app.add_img_btn.config(state='normal')
                 app.del_img_btn.config(state='disabled')
@@ -463,6 +503,7 @@ class MenuBar(Frame):
                 app.ScrolledCanvas.initialize(clean_canvas=True)
 
                 self.file.entryconfigure('Save', state="normal")
+                self.ebutton.config(state='normal')
                 app.update_progress(100)
 
     def open_project(self, event=None):
@@ -485,6 +526,7 @@ class MenuBar(Frame):
             app.update_progress(5)
             if db.curs.fetchall() == [('ImageInfo',), ('TreeInfo',)]:
                 app.add_img_btn.config(state='normal')
+                self.ebutton.config(state='normal')
                 app.title_name = project_dir[:20] + '...' + project_dir[-30:]
                 app.update_title()
                 app.update_progress(10)
@@ -513,24 +555,126 @@ class MenuBar(Frame):
             app.update_title()
             app.update_progress(100)
 
-    def default_baf_export(self):
-        pass
+    @staticmethod
+    def default_baf_export():
+        save_path = asksaveasfilename(title='export data', defaultextension=".xls",
+                                      filetypes=[('2003 excelfile', '.xls')])
+        if save_path != '':
+            app.update_progress(10)
+            wb = xlwt.Workbook(encoding='uft-8')
+            plot_info = wb.add_sheet(sheetname='Plot Info')
+            tree_info = wb.add_sheet(sheetname='Tree Info')
 
-    def sequence_baf_export(self):
-        pass
+            # plot info
+            img_data = app.img_info
+            img_length = len(img_data['img_id'])
+            img_title = ['Image ID', 'Image Name', 'BAF', 'In Tree Number', 'BA']
+            for i, name in enumerate(img_title):
+                plot_info.write(0, i, label=name)
+            for i in range(img_length):
+                plot_info.write(i + 1, 0, img_data['img_id'][i])
+                plot_info.write(i + 1, 1, img_data['img_name'][i])
+                plot_info.write(i + 1, 2, img_data['baf'][i])
+                plot_info.write(i + 1, 3, img_data['in_num'][i])
+                plot_info.write(i + 1, 4, img_data['ba'][i])
+                app.update_progress(10 + 40 * i / img_length)
+
+            # tree_info
+            tree_data = db.get_tree_info_all()
+            tree_length = len(tree_data['tree_id'])
+            tree_title = ['Tree ID', 'Image ID', 'Tree Width Pixel', 'Max BAF']
+            for i, name in enumerate(tree_title):
+                tree_info.write(0, i, label=name)
+            for i in range(tree_length):
+                tree_info.write(i + 1, 0, tree_data['tree_id'][i])
+                tree_info.write(i + 1, 1, tree_data['img_id'][i])
+                tree_info.write(i + 1, 2, tree_data['width'][i])
+                tree_info.write(i + 1, 3, tree_data['max_baf'][i])
+                app.update_progress(50 + 40 * i / tree_length)
+
+            wb.save(save_path)
+            app.update_progress(100)
+            showinfo('Success', 'Successfully export result into ' + save_path)
+
+    @staticmethod
+    def sequence_baf_export():
+        save_path = asksaveasfilename(title='export data', defaultextension=".xls",
+                                      filetypes=[('2003 excelfile', '.xls')])
+        if save_path != '':
+            baf_list = [2]
+            ask_loop = True
+            while ask_loop:
+                st = askfloat('start', 'please type the start baf value (>= 1)', minvalue=1, maxvalue=50)
+                ed = askfloat('end', 'Please type the end baf value (<=50)', minvalue=st, maxvalue=50)
+                step = askfloat('step', 'Please type the step of interval', minvalue=0.05, maxvalue=ed - st)
+                baf_list = list(arange(st, ed + step, step))
+                confirm = askyesnocancel('Confirm', 'Are you sure to export results related to the following BAFs? \n'
+                                                    + str(baf_list) + '\n[Yes] to continue, [No] to reinput BAFs, '
+                                                                      '[Cancel] to cancel export')
+                if confirm is None:
+                    return
+                elif not confirm:  # false, re input
+                    pass
+                else:  # true ,start export
+                    ask_loop = False
+
+            app.update_progress(10)
+            # export excels
+            wb = xlwt.Workbook(encoding='uft-8')
+            plot_info = wb.add_sheet(sheetname='Plot Info')
+            tree_info = wb.add_sheet(sheetname='Tree Info')
+
+            # plot info
+            img_data = db.get_img_info_baf_range(baf_list)
+            img_length = len(img_data['img_id'])
+            plot_info.write(0, 0, label='Image ID')
+            plot_info.write(0, 1, label='Image Name')
+            col = 2
+            for baf in baf_list:
+                plot_info.write(0, col, label='BA(baf=' + str(baf) + ')')
+                plot_info.write(0, col+1, label='In Tree Num')
+                col += 2
+
+            for i in range(img_length):
+                plot_info.write(i + 1, 0, img_data['img_id'][i])
+                plot_info.write(i + 1, 1, img_data['img_name'][i])
+                col = 2
+                for j, value in enumerate(img_data['baf_num_ba'][i]):
+                    plot_info.write(i + 1, col + j, value)
+                app.update_progress(10 + 40 * i / img_length)
+
+            # tree_info
+            tree_data = db.get_tree_info_all()
+            tree_length = len(tree_data['tree_id'])
+            tree_title = ['Tree ID', 'Image ID', 'Tree Width Pixel', 'Max BAF']
+            for i, name in enumerate(tree_title):
+                tree_info.write(0, i, label=name)
+            for i in range(tree_length):
+                tree_info.write(i + 1, 0, tree_data['tree_id'][i])
+                tree_info.write(i + 1, 1, tree_data['img_id'][i])
+                tree_info.write(i + 1, 2, tree_data['width'][i])
+                tree_info.write(i + 1, 3, tree_data['max_baf'][i])
+                app.update_progress(50 + 40 * i / tree_length)
+
+            wb.save(save_path)
+            app.update_progress(100)
+            showinfo('Success', 'Successfully export result into ' + save_path)
 
 
 class ScrolledCanvas(Frame):
     add_tree = False
     add_tree_lock = False
-    zoom_ratio = 1
+    zoom_ratio = 1.0
     mouse_in_canvas = False
     shift_hold = False
     move_point = False
+    zooming = False
+    reference_bar = False
 
     moving = {'fixed_p': [0, 0], 'line': 'line_id', 'move_p': 'point_id',
-              'text': 'text_id', 'tree_row': 0}
-    shape_ids = {'point1': [], 'line': [], 'point2': [], 'text': [], 'canvas_img': None}  # default, point1 is left, point2 is right
+              'text': 'text_id', 'tree_row': 0, 'which': 0}
+    # default, point1 is left, point2 is right, r is id for reference bar
+    shape_ids = {'point1': [], 'line': [], 'point2': [], 'text': [], 'canvas_img': None, 'r': None}
 
     # record current img
     img_id = -1
@@ -540,6 +684,8 @@ class ScrolledCanvas(Frame):
     img_height = 800
     save_image = None  # preprocess photos = PIL.Image()
     save_photo = None  # zoomed photo shows in canvas = tk.PhotoImage()
+
+    min_width = in_tree_pixel(1, img_width) * zoom_ratio
 
     def __init__(self, parent=None):
         Frame.__init__(self, parent)
@@ -570,15 +716,17 @@ class ScrolledCanvas(Frame):
         im = Image.fromarray(imarray.astype('uint8')).convert("RGBA")
         photo_im = PhotoImage(im)
         self.shape_ids['canvas_img'] = self.canvas.create_image(0, 0, image=photo_im, anchor='nw')
+        self.shape_ids['r'] = self.canvas.create_rectangle(0, 0, 5, 5, fill='white', outline='black', state='hidden')
 
     # ========================
     #  functions used outside
     # ========================
     def initialize(self, clean_canvas=False):
-        # functions used to
+        # functions used to clear trees or background image (if clean_canvas =True)
         self.add_tree = False
         self.add_tree_lock = False
-        self.zoom_ratio = 1
+        if clean_canvas:
+            self.zoom_ratio = 1.0
         self.mouse_in_canvas = False
         self.shift_hold = False
         self.move_point = False
@@ -604,7 +752,7 @@ class ScrolledCanvas(Frame):
             self.save_photo = PhotoImage(im)
             self._update_img()
 
-    def open_img(self, reload=True):
+    def open_img(self, reload=True, recenter=True):
         # step0: clear canvas
         # step1: load image and image equalization
         # step2: draw dealt image
@@ -619,11 +767,9 @@ class ScrolledCanvas(Frame):
             self._resize_img()
             app.update_progress(70)
             self._update_img()
-        else:
-            self._resize_img()
-            self._update_img()
 
-        self._change_canvas_position(0, self.save_photo.height() / 2)
+        if recenter:
+            self.change_canvas_position(0, self.save_photo.height() / 2)
         # step 1
         app.update_progress(80)
 
@@ -632,6 +778,10 @@ class ScrolledCanvas(Frame):
         for tree_row in range(tree_num):
             x1, y1 = app.tree_info['left'][tree_row]
             x2, y2 = app.tree_info['right'][tree_row]
+            x1 *= self.zoom_ratio
+            y1 *= self.zoom_ratio
+            x2 *= self.zoom_ratio
+            y2 *= self.zoom_ratio
             if app.tree_info['state'][tree_row] == 'out':
                 line = self.canvas.create_line(x1, y1, x2, y2, fill='red', width=3)
             else:
@@ -650,22 +800,33 @@ class ScrolledCanvas(Frame):
             progress = 20 * (tree_row / tree_num)
             app.update_progress(80 + progress)
 
+    def change_canvas_position(self, center_x=None, center_y=None):
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        img_width = self.save_photo.width()
+        img_height = self.save_photo.height()
+
+        if center_x is not None:
+            x = (center_x - 0.5 * canvas_width) / img_width
+            final_x = min(max(0, x), 1)
+            self.canvas.xview_moveto(final_x)
+
+        if center_y is not None:
+            y = (center_y - 0.5 * canvas_height) / img_height
+            final_y = min(max(0, y), 1)
+            self.canvas.yview_moveto(final_y)
+
     def open_create_tree_mode(self, event):
         # press 'space' changing to adding tree mode
         if app.del_img_btn['state'] == 'normal':  # ensure have img data
             if not self.add_tree:  # not in add tree mode
                 self.add_tree = True
-                print('creating mode open')
                 if self.mouse_in_canvas:
                     self.config(cursor='tcross')
             else:
                 if not self.add_tree_lock:  # not in the second tree
                     self.add_tree = False
-                    print('creating mode close')
                     self.config(cursor='arrow')
-
-    def tree_center(self, tree_id):
-        pass
 
     # =======================
     #  functions used inside
@@ -711,10 +872,13 @@ class ScrolledCanvas(Frame):
                 self._update_tree_infos(self.img_id, x0, y0, x, y)
 
     def move_mouse(self, event):
+        x = self.canvas.canvasx(event.x)
+        y = self.canvas.canvasy(event.y)
         if self.add_tree_lock:  # draw lines follow mouse, only works when clicking the second point
-            x = self.canvas.canvasx(event.x)
-            y = self.canvas.canvasy(event.y)
             self._update_shape_info(x, y)
+        else:  # make a minimum bar follow mouse
+            if self.reference_bar:
+                self.canvas.coords(self.shape_ids['r'], [x, y - 5, x + self.min_width * self.zoom_ratio, y])
 
     def hold_move_mouse(self, event):
         # only activated when press left and not loose
@@ -757,18 +921,59 @@ class ScrolledCanvas(Frame):
     def press_shift(self, event):
         if not self.shift_hold:
             self.shift_hold = True
-            print(self.shift_hold)
 
     def release_shift(self, event):
         self.shift_hold = False
-        print(self.shift_hold)
+
+    def press_r(self, event):
+        if app.del_img_btn['state'] == 'normal':
+            x = self.canvas.canvasx(event.x)
+            y = self.canvas.canvasy(event.y)
+            if not self.reference_bar:
+                self.reference_bar = True
+                self.canvas.itemconfig(self.shape_ids['r'], state='normal')
+                self.min_width = in_tree_pixel(1, self.img_width)
+                self.canvas.coords(self.shape_ids['r'], [x, y - 5, x + self.min_width * self.zoom_ratio, y])
+            else:
+                self.reference_bar = False
+                self.canvas.itemconfig(self.shape_ids['r'], state='hidden')
 
     def xbar_scroll(self, event):
         scroll = -1 if event.delta > 0 else 1
         self.canvas.xview_scroll(scroll, 'units')
 
     def zoom(self, event):
-        pass
+        if app.del_img_btn['state'] == 'normal':  # ensure open a image
+            if not self.add_tree_lock:
+                rate = 0.2 if event.delta > 0 else -0.2
+                zoom_rate = round(self.zoom_ratio + rate, 1)
+                if zoom_rate + 0.2 > 2.5:
+                    self.zoom_ratio = 2.4
+                    app.update_title()
+                else:
+                    canvas_width = self.canvas.winfo_width()
+                    canvas_height = self.canvas.winfo_height()
+                    img_width, img_height = self.save_image.size
+                    if img_width * zoom_rate < canvas_width or img_height * zoom_rate < canvas_height:  # can't small any more
+                        app.update_title()
+                    else:  # proper zoom operation
+                        app.update_progress(10)
+                        self.zooming = True
+                        self.zoom_ratio = zoom_rate
+                        app.update_title()
+
+    def refresh_zoomed_image(self, event):
+        if self.zooming:
+            self._resize_img()
+            app.update_progress(50)
+            self._update_img()
+            app.update_progress(80)
+            self._zoom_shapes()
+            app.update_progress(90)
+            app.update_title()
+            app.update_progress(100)
+            self.change_canvas_position(center_y=self.img_height / 2 * self.zoom_ratio)
+            self.zooming = False
 
     # ------------------
     #  reused functions
@@ -776,11 +981,15 @@ class ScrolledCanvas(Frame):
     def _update_tree_infos(self, tree_img_id, x0, y0, x, y, mode='add'):
         # functions to update img_table and tree_table when adding and editing tree points
         # x0, y0 is the fixed points position
+        fx = x0 / self.zoom_ratio  # fixed_x
+        fy = y0 / self.zoom_ratio
+        mx = x / self.zoom_ratio  # moved_x
+        my = y / self.zoom_ratio
+        if not self.shift_hold:
+            my = fy
         if mode == 'add':
             # consider zoom_ratio
-            tree_id, width, baf_max = db.add_tree(img_id=tree_img_id,
-                                                  lx=x0 / self.zoom_ratio, ly=y0 / self.zoom_ratio,
-                                                  rx=x / self.zoom_ratio, ry=y / self.zoom_ratio, return_value=True)
+            tree_id, width, baf_max = db.add_tree(img_id=tree_img_id, lx=fx, ly=fy, rx=mx, ry=my, return_value=True)
             if baf_max >= self.baf:
                 state = 'in'
             else:
@@ -788,8 +997,8 @@ class ScrolledCanvas(Frame):
 
             # add records to tree_table
             app.tree_info['tree_id'].append(tree_id)
-            app.tree_info['left'].append([x0, y0])
-            app.tree_info['right'].append([x, y])
+            app.tree_info['left'].append([fx, fy])
+            app.tree_info['right'].append([mx, my])
             app.tree_info['width'].append(width)
             app.tree_info['state'].append(state)
 
@@ -803,16 +1012,12 @@ class ScrolledCanvas(Frame):
 
         else:  # mode=='edit'
             tree_row = self.moving['tree_row']
-            if app.tree_info['left'][tree_row] == [x0, y0]:  # change the right(point2)
-                app.tree_info['right'][tree_row] = [x, y]
-                width, baf_max = db.edit_tree(tree_id=tree_img_id,
-                                              lx=x0 / self.zoom_ratio, ly=y0 / self.zoom_ratio,
-                                              rx=x / self.zoom_ratio, ry=y / self.zoom_ratio, return_value=True)
-            else:  # change the left
-                app.tree_info['left'][tree_row] = [x, y]
-                width, baf_max = db.edit_tree(tree_id=tree_img_id,
-                                              lx=x / self.zoom_ratio, ly=y / self.zoom_ratio,
-                                              rx=x0 / self.zoom_ratio, ry=y0 / self.zoom_ratio, return_value=True)
+            if self.moving['which'] == 1:  # move the left(point1)
+                app.tree_info['left'][tree_row] = [mx, my]
+                width, baf_max = db.edit_tree(tree_id=tree_img_id, lx=mx, ly=my, rx=fx, ry=fy, return_value=True)
+            else:  # move the right(point2)
+                app.tree_info['right'][tree_row] = [mx, my]
+                width, baf_max = db.edit_tree(tree_id=tree_img_id, lx=fx, ly=fy, rx=mx, ry=my, return_value=True)
 
             if baf_max >= self.baf:
                 state = 'in'
@@ -836,7 +1041,7 @@ class ScrolledCanvas(Frame):
 
         if not self.shift_hold:  # horizontal lock
             y = y0
-        tree_width = db.length_calculator(x0, y0, x, y)
+        tree_width = db.length_calculator(x0, y0, x, y) / self.zoom_ratio
         baf_max = max_baf(self.img_width, tree_width)
 
         text_x = (x0 + x) / 2
@@ -872,6 +1077,7 @@ class ScrolledCanvas(Frame):
             self.moving['fixed_p'] = self._get_shape_center(fixed_id)
             self.moving['tree_row'] = row_num
             self.moving['text'] = text
+            self.moving['which'] = 1
         if shape_id in self.shape_ids['point2']:
             row_num = self.shape_ids['point2'].index(shape_id)
             line_id = self.shape_ids['line'][row_num]
@@ -882,15 +1088,29 @@ class ScrolledCanvas(Frame):
             self.moving['fixed_p'] = self._get_shape_center(fixed_id)
             self.moving['tree_row'] = row_num
             self.moving['text'] = text
+            self.moving['which'] = 2
 
-    def _zoom_in(self):
-        pass
-
-    def _zoom_out(self):
-        pass
-
-    def _refresh_shapes(self):
-        pass
+    def _zoom_shapes(self):
+        # functions changing points positions after zooming
+        length = len(app.tree_info['tree_id'])
+        if length > 0:  # not empty tree
+            for i in range(length):
+                lx, ly = app.tree_info['left'][i]
+                rx, ry = app.tree_info['right'][i]
+                lx *= self.zoom_ratio
+                ly *= self.zoom_ratio
+                rx *= self.zoom_ratio
+                ry *= self.zoom_ratio
+                center_x = (lx + rx) / 2
+                center_y = (ly + ry) / 2
+                p1_id = self.shape_ids['point1'][i]
+                p2_id = self.shape_ids['point2'][i]
+                l_id = self.shape_ids['line'][i]
+                t_id = self.shape_ids['text'][i]
+                self.canvas.coords(l_id, [lx, ly, rx, ry])
+                self.canvas.coords(p1_id, [lx - 5, ly - 5, lx + 5, ly + 5])
+                self.canvas.coords(p2_id, [rx - 5, ry - 5, rx + 5, ry + 5])
+                self.canvas.coords(t_id, [center_x, center_y])
 
     def _clear_canvas_one_trees(self, tree_row):
         # clear canvas
@@ -899,28 +1119,9 @@ class ScrolledCanvas(Frame):
         self.canvas.delete(self.shape_ids['line'][tree_row])
         self.canvas.delete(self.shape_ids['text'][tree_row])
 
-        # todo: refresh app.tree_table but not redraw
-
     def _clear_canvas_all_trees(self):
         for i in range(len(self.shape_ids['point1'])):
             self._clear_canvas_one_trees(i)
-
-    def _change_canvas_position(self, center_x, center_y):
-        canvas_width = self.canvas.winfo_width()
-        canvas_height = self.canvas.winfo_height()
-        print(canvas_height, canvas_width)
-        img_width = self.save_photo.width()
-        img_height = self.save_photo.height()
-        print(img_width, img_height)
-
-        x = (center_x - 0.5 * canvas_width) / img_width
-        y = (center_y - 0.5 * canvas_height) / img_height
-
-        final_x = min(max(0, x), 1)
-        final_y = min(max(0, y), 1)
-
-        self.canvas.xview_moveto(final_x)
-        self.canvas.yview_moveto(final_y)
 
     def _update_img(self):
         self.canvas.itemconfig(self.shape_ids['canvas_img'], image=self.save_photo)
@@ -936,23 +1137,61 @@ class ScrolledCanvas(Frame):
         draw.line([0, image.size[1] / 2, image.size[0], image.size[1] / 2], fill=(255, 255, 0))
 
         self.save_image = image
+        del image, draw
 
     def _resize_img(self):
-        width, height = self.save_image.size
-        if self.zoom_ratio < 1.0:
-            filter = Image.ANTIALIAS
+        if self.zoom_ratio == 1.0:
+            self.save_photo = PhotoImage(self.save_image)
         else:
-            filter = Image.BICUBIC
+            width, height = self.save_image.size
+            if self.zoom_ratio < 1.0:
+                img_zoom = self.save_image.resize((int(width * self.zoom_ratio),
+                                                   int(height * self.zoom_ratio)), Image.ANTIALIAS)
+            else:
+                img_zoom = self.save_image.resize((int(width * self.zoom_ratio),
+                                                   int(height * self.zoom_ratio)), Image.BICUBIC)
+            try:
+                self.save_photo = PhotoImage(img_zoom)
+                del img_zoom
+            except (MemoryError, TclError):
+                showwarning('Warning', 'Not enough memory to support zoom in this size, please try another one')
+                self.zoom_ratio = 1.0
+                self.save_photo = PhotoImage(self.save_image)
 
-        img_zoom = self.save_image.resize((int(width * self.zoom_ratio),
-                                           int(height * self.zoom_ratio)), filter)
-        self.save_photo = PhotoImage(img_zoom)
 
-    def _update_canvas_img(self, bg_img):
-        pass
+class TkErrorCatcher:
+    # In some cases tkinter will only print the traceback.
+    # Enables the program to catch tkinter errors normally
+    # To use
+    # import tkinter
+    # tkinter.CallWrapper = TkErrorCatcher
+
+    def __init__(self, func, subst, widget):
+        self.func = func
+        self.subst = subst
+        self.widget = widget
+
+    def __call__(self, *args):
+        try:
+            if self.subst:
+                args = self.subst(*args)
+            return self.func(*args)
+        # except SystemExit as msg:
+        #    raise SystemExit(msg)
+        except Exception as err:
+            raise err
 
 
 if __name__ == '__main__':
+    import tkinter
+    tkinter.CallWrapper = TkErrorCatcher
     app = Pano2BA()
     db = DataBase('~default.sqlite')
-    app.mainloop()
+    try:
+        app.mainloop()
+    except Exception as e:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
+        error_info = ''.join(line for line in lines)
+        print(error_info)
+        showerror('Error', error_info)
