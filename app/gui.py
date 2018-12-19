@@ -111,6 +111,7 @@ class Pano2BA(Tk):
         self.bind('<Control-n>', self.MenuBar.new_project)
         self.bind('<Control-o>', self.MenuBar.open_project)
         self.bind('<Control-s>', self.MenuBar.save_project)
+        self.bind('<Lock-KeyPress>', self.show_capslock_warning)
 
         # connect to the control of Scrolled Canvas
         self.bind('<space>', self.ScrolledCanvas.open_create_tree_mode)
@@ -311,9 +312,9 @@ class Pano2BA(Tk):
             if baf is not None:
                 self.update_progress(10)
                 db.edit_img_baf(self.ScrolledCanvas.img_id, baf)
-                self.local_refresh_img_table(baf)
-                self.update_progress(40)
                 self.refresh_tree_table()
+                self.update_progress(40)
+                self.local_refresh_img_table(baf)
                 self.update_progress(70)
                 self.ScrolledCanvas.open_img(reload=False, recenter=False)
                 self.update_progress(100)
@@ -444,6 +445,10 @@ class Pano2BA(Tk):
                     self.ScrolledCanvas.open_img(reload=True)
                     self.update_progress(100)
                     self.update_title()
+                    
+    def show_capslock_warning(self, event=None):
+        if event.keysym != "Caps_Lock":
+            showwarning('Caution', 'You activate CapsLock, it may effects some operation, please turn it off')
 
 
 class MenuBar(Frame):
@@ -526,6 +531,7 @@ class MenuBar(Frame):
             app.update_progress(5)
             if db.curs.fetchall() == [('ImageInfo',), ('TreeInfo',)]:
                 app.add_img_btn.config(state='normal')
+                self.file.entryconfigure('Save', state="normal")
                 self.ebutton.config(state='normal')
                 app.title_name = project_dir[:20] + '...' + project_dir[-30:]
                 app.update_title()
@@ -707,6 +713,7 @@ class ScrolledCanvas(Frame):
         self.canvas.bind('<Control-MouseWheel>', self.zoom)
         self.canvas.bind("<Enter>", self.on_enter)
         self.canvas.bind("<Leave>", self.on_leave)
+        self.canvas.bind('<Lock-KeyPress>', Pano2BA.show_capslock_warning)
 
         self.vbar.pack(side='right', fill='y')
         self.hbar.pack(side='bottom', fill='x')
