@@ -979,7 +979,7 @@ class ScrolledCanvas(Frame):
     # =======================
     #  functions used inside
     # =======================
-    def canvas_create_octagon(self, x, y, fill='white', outline='black', state='normal', mode='cir'):
+    def canvas_create_octagon(self, x, y, fill='white', outline='black', state='normal', mode='oct'):
         #      H--|--A
         #   G /   |o  \ B
         #  --|----|----|--
@@ -1008,7 +1008,7 @@ class ScrolledCanvas(Frame):
 
         return oct
 
-    def canvas_coords_octagon(self, oct_id, x, y, mode="cir"):
+    def canvas_coords_octagon(self, oct_id, x, y, mode="oct"):
 
         r = self.r_pixel
 
@@ -1133,7 +1133,7 @@ class ScrolledCanvas(Frame):
             if app.mode.get() == 0:
                 self._update_tree_infos(app.tree_info['tree_id'][self.moving['tree_row']], x0, y0, x, y, mode='edit')
             else:
-                self._update_tree_infos_cmode(app.tree_info['click_id'][self.moving['tree_row']], x, y, mode='edit')
+                self._update_tree_infos_cmode(app.tree_info['click_id'][self.moving_cmode['tree_row']], x, y, mode='edit')
             self.move_point = False
             app.make_unsaved()
 
@@ -1299,7 +1299,7 @@ class ScrolledCanvas(Frame):
             app.tree_table.insert('', 'end', iid=str(click_id), values=click_values)
 
         else:   # edit exists point mode
-            tree_row = self.moving['tree_row']
+            tree_row = self.moving_cmode['tree_row']
             db.edit_click(click_id=tree_img_id, x=mx, y=my)
             app.tree_info['x'][tree_row] = mx
             app.tree_info['y'][tree_row] = my
