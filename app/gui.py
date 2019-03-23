@@ -34,7 +34,7 @@ from PIL import Image, ImageDraw
 from PIL.ImageTk import PhotoImage
 from PIL.ImageOps import equalize
 from db import DataBase
-from numpy import ones, arange, sqrt
+from numpy import ones, arange, sqrt, sin, cos, pi
 from ba import plot_ba_calculator, max_baf, in_tree_pixel
 
 
@@ -234,10 +234,24 @@ class Pano2BA(Tk):
                                 ask_keyword = False
                             else:
                                 if satisfy:  # confirm to add
+                                    img_mode_choice = askyesnocancel('Default mode Selection',
+                                                                     'The default tree marking mode is Edge Marking[Yes] or Clicking[No] or ignore[Cancel]?')
+                                    if img_mode_choice:
+                                        img_mode = 0
+                                    else:
+                                        img_mode = 1
+
                                     ask_keyword = False
                                     length = len(img_dir_list)
                                     for i, img_dir in enumerate(img_dir_list):
-                                        db.add_img(img_dir)
+                                        # -----for Lab use only------
+                                        if img_mode_choice is None:
+                                            if '_r' in os.path.basename(img_dir):
+                                                img_mode = 1
+                                            else:
+                                                img_mode = 0
+                                        # ------for Lab use only------
+                                        db.add_img(img_dir, img_mode)
                                         self.update_progress(int(100 * i / length))
                                     self.refresh_img_table()
                                     self.open_img_project()
@@ -248,7 +262,19 @@ class Pano2BA(Tk):
             else:  # add single img
                 img_dir = askopenfilename(title='Choose an image', filetypes=[('JPEG', '.jpeg, .jpg'), ('PNG', '.png')])
                 if img_dir != '':
-                    db.add_img(img_dir)
+                    img_mode_choice = askyesnocancel('Default mode Selection',
+                                              'The default tree marking mode is Edge Marking[Yes] or Clicking[No] or ignore[Cancel]?')
+                    if img_mode_choice is None:  # Cancel
+                        # for Lab use only
+                        if '_r' in os.path.basename(img_dir):
+                            img_mode = 1
+                        else:
+                            img_mode = 0
+                    elif img_mode_choice == True:
+                        img_mode = 0
+                    else:
+                        img_mode = 1
+                    db.add_img(img_dir, img_mode)
                     self.update_progress(50)
                     self.refresh_img_table()
                     self.open_img_project()
@@ -825,7 +851,7 @@ class ScrolledCanvas(Frame):
         self.shape_ids['canvas_img'] = self.canvas.create_image(0, 0, image=photo_im, anchor='nw')
         self.shape_ids['r'] = self.canvas.create_rectangle(0, 0, 5, 5, fill='white', outline='black', state='hidden')
         self.click_ids['r'] = self.canvas_create_octagon(self.img_width / 2, self.img_height / 2,
-                                                         fill='white', outline='black', state='hidden')
+                                                         fill='white', outline='yellow', stipple='gray12', state='hidden')
 
     # ========================
     #  functions used outside
@@ -917,7 +943,7 @@ class ScrolledCanvas(Frame):
                 point2 = self.canvas.create_oval(x2 - 5, y2 - 5, x2 + 5, y2 + 5, fill='yellow', outline='black')
                 text_x = (x1 + x2) / 2
                 text_y = (y1 + y2) / 2
-                text = self.canvas.create_text(text_x, text_y, text=str(tree_row+1), fill='yellow', font=('Times', '12', 'bold'))
+                text = self.canvas.create_text(text_x, text_y, text=str(tree_row+1), fill='black', font=('Times', '12', 'bold'))
 
                 self.shape_ids['point1'].append(point1)
                 self.shape_ids['point2'].append(point2)
@@ -933,7 +959,7 @@ class ScrolledCanvas(Frame):
                 x = app.tree_info['x'][tree_row] * self.zoom_ratio
                 y = app.tree_info['y'][tree_row] * self.zoom_ratio
 
-                octagon = self.canvas_create_octagon(x, y)
+                octagon = self.canvas_create_octagon(x, y, fill='white', outline='black')
                 text = self.canvas.create_text(x, y, text=str(tree_row + 1), fill='black', font=('Times', '12', 'bold'))
 
                 # click_ids = {'point':[], 'text':[], 'canvas_img':None, 'r':None}
@@ -965,10 +991,10 @@ class ScrolledCanvas(Frame):
         if app.del_img_btn['state'] == 'normal':  # ensure have img data
             if not self.add_tree:  # not in add tree mode
                 self.add_tree = True
+                if app.mode.get() == 1:  # click mode show reference ball
+                    self.reference_ball_display(event)
                 if self.mouse_in_canvas:
                     self.config(cursor='tcross')
-                    if app.mode.get() == 1:   # click mode show reference ball
-                        self.reference_ball_display(event)
             else:
                 if not self.add_tree_lock:  # not in the second tree
                     self.add_tree = False
@@ -979,7 +1005,14 @@ class ScrolledCanvas(Frame):
     # =======================
     #  functions used inside
     # =======================
-    def canvas_create_octagon(self, x, y, fill='white', outline='black', state='normal', mode='oct'):
+    @staticmethod
+    def top_iteration(n, x, y, r):
+        angle = [pi / 16 + 2 * pi * (i / n)  for i in range(n)]
+        for a in angle:
+            yield x + r * cos(a)
+            yield y + r * sin(a)
+
+    def canvas_create_octagon(self, x, y, fill='white', outline='yellow', stipple='', state='normal', mode='oct'):
         #      H--|--A
         #   G /   |o  \ B
         #  --|----|----|--
@@ -1002,9 +1035,12 @@ class ScrolledCanvas(Frame):
             xf = xg = x - r
 
             oct = self.canvas.create_polygon(xa, ya, xb, yb, xc, yc, xd, yd, xe, ye, xf, yf, xg, yg, xh, yh, xa, ya,
-                                             fill=fill, outline=outline, state=state)
+                                             fill=fill, outline=outline, state=state, stipple=stipple)
         else:
-            oct = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=fill, outline=outline, state=state)
+            R = r / cos(pi / 16)
+            top = list(self.top_iteration(16, x, y, R))
+            oct = self.canvas.create_polygon(*top, fill=fill, outline=outline, state=state, stipple=stipple)
+            #oct = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill='LightBlue', outline='yellow', state=state, stipple="gray12")
 
         return oct
 
@@ -1025,7 +1061,9 @@ class ScrolledCanvas(Frame):
 
             self.canvas.coords(oct_id, [xa, ya, xb, yb, xc, yc, xd, yd, xe, ye, xf, yf, xg, yg, xh, yh, xa, ya])
         else:
-            self.canvas.coords(oct_id, [x - r, y - r, x + r, y + r])
+            R = r / cos(pi / 16)
+            top = list(self.top_iteration(16, x, y, R))
+            self.canvas.coords(oct_id, top)
 
     # --------------
     #  mouse events
@@ -1073,7 +1111,7 @@ class ScrolledCanvas(Frame):
                 app.make_unsaved()
 
                 number = len(self.click_ids['point'])
-                point = self.canvas_create_octagon(x, y, fill='white', outline='black', state='normal')
+                point = self.canvas_create_octagon(x, y, fill='white', outline='black', state='normal', stipple='')
                 text = self.canvas.create_text(x, y, text=str(number + 1), fill='black', font=('Times', '12', 'bold'))
 
                 self.click_ids['point'].append(point)
@@ -1114,6 +1152,7 @@ class ScrolledCanvas(Frame):
                                 self.move_point = True
                     else:    # click mode
                         if id_touched[0] in self.click_ids['point']:
+                            self.canvas.itemconfigure(id_touched[0], outline='yellow', stipple='gray12')
                             self._pick_moving_ids(id_touched[0])
                             self._update_shape_info_cmode(x, y)
                             self.move_point = True
@@ -1134,6 +1173,7 @@ class ScrolledCanvas(Frame):
                 self._update_tree_infos(app.tree_info['tree_id'][self.moving['tree_row']], x0, y0, x, y, mode='edit')
             else:
                 self._update_tree_infos_cmode(app.tree_info['click_id'][self.moving_cmode['tree_row']], x, y, mode='edit')
+                self.canvas.itemconfigure(self.moving_cmode['move_p'], outline='black', stipple='')
             self.move_point = False
             app.make_unsaved()
 
@@ -1141,10 +1181,22 @@ class ScrolledCanvas(Frame):
         self.mouse_in_canvas = True
         if self.add_tree:
             self.config(cursor='tcross')
+            if app.mode.get() == 0:
+                if self.reference_bar:
+                    self.canvas.itemconfig(self.shape_ids['r'], state='normal')
+            else:
+                if self.reference_bar:
+                    self.canvas.itemconfig(self.click_ids['r'], state='normal')
 
     def on_leave(self, event):
         self.mouse_in_canvas = False
         self.config(cursor='arrow')
+        if app.mode.get() == 0:
+            if self.reference_bar:
+                self.canvas.itemconfig(self.shape_ids['r'], state='hidden')
+        else:
+            if self.reference_bar:
+                self.canvas.itemconfig(self.click_ids['r'], state='hidden')
 
     def press_shift(self, event):
         if not self.shift_hold:
@@ -1285,8 +1337,8 @@ class ScrolledCanvas(Frame):
 
             # add records to tree_table
             app.tree_info['click_id'].append(click_id)
-            app.tree_info['x'].append(x)
-            app.tree_info['y'].append(y)
+            app.tree_info['x'].append(mx)
+            app.tree_info['y'].append(my)
             app.tree_info['width'].append(width)
             app.tree_info['state'].append('in')
 

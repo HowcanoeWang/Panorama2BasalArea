@@ -74,7 +74,7 @@ class DataBase:
 
         self.commit()
 
-    def add_img(self, img_path):
+    def add_img(self, img_path, mode=0):
         im = Image.open(img_path)
         width, height = im.size
         img_name_ext = os.path.basename(img_path)
@@ -87,8 +87,8 @@ class DataBase:
         else:
             img_id = max_id + 1
 
-        self.curs.execute('insert into ImageInfo values (?,?,?,?,?,?)',
-                          (img_id, img_path, img_name, width, height, 2))
+        self.curs.execute('insert into ImageInfo values (?,?,?,?,?,?,?)',
+                          (img_id, img_path, img_name, width, height, 2, mode))
 
     def rm_img(self, img_id):
         self.curs.execute('delete from ImageInfo where img_id = ?', [img_id])
