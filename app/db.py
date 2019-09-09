@@ -50,6 +50,7 @@ class DataBase:
         self.conn.commit()
         self.db_path = db_path
 
+
     def change_db(self, db_path):
         self.conn.close()
         self.conn = sqlite3.connect(db_path)
@@ -134,10 +135,9 @@ class DataBase:
 
     def get_img_info_baf_range(self, baf_list):
         img_info_all = {'img_id':[], 'img_name':[], 'baf_num_ba':[]}
-        self.curs.execute('select img_id from TreeInfo')
+        self.curs.execute('select img_id from ImageInfo')
 
-        for r in self.curs.fetchall():
-            img_info_all['img_id'].append(r[0])
+        img_info_all['img_id'] = [r[0] for r in self.curs.fetchall()]
 
         for img_id in img_info_all['img_id']:
             self.curs.execute('select img_name from ImageInfo where img_id = ?', [img_id])
@@ -148,7 +148,7 @@ class DataBase:
                 in_num = len(self.curs.fetchall())
                 ba = plot_ba_calculator(baf, in_num)
                 baf_num_ba.append(ba)
-                baf_num_ba.append(in_num)
+                #baf_num_ba.append(in_num)
 
             img_info_all['baf_num_ba'].append(baf_num_ba)
 

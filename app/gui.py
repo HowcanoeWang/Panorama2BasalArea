@@ -42,7 +42,8 @@ class Pano2BA(Tk):
 
     saved = True
     title_name = 'Panorama2BA'
-    img_info = {'img_id': [], 'img_dir': [], 'img_name': [], 'width': [], 'height': [], 'baf': [], 'in_num': [], 'ba': []}
+    img_info = {'img_id': [], 'img_dir': [], 'img_name': [],
+                'width': [], 'height': [], 'baf': [], 'in_num': [], 'ba': []}
     # edge mode
     tree_info = {'tree_id': [], 'left': [], 'right': [], 'width': [], 'state': []}
     # click mode
@@ -136,6 +137,7 @@ class Pano2BA(Tk):
         self.img_table.bind('<Button-2>', self.change_baf_all)
 
         self.tree_table.bind('<ButtonRelease-1>', self.center_tree)
+        self.tree_table.bind('<KeyPress-Delete>', self.del_tree)
 
         # ====================
         #  packing components
@@ -187,9 +189,9 @@ class Pano2BA(Tk):
 
         def _do_quit():
             self.quit()
-            if os.path.exists('~default.sqlite'):
+            if os.path.exists('~$default.sqlite'):
                 db.conn.close()
-                os.remove('~default.sqlite')
+                os.remove('~$default.sqlite')
 
         if not self.saved:
             ans = askokcancel('Warning', "Changes not saved, continue quit and drop all changes?")
@@ -227,15 +229,17 @@ class Pano2BA(Tk):
                                 keywords = keyword_string.split(';')
                                 img_dir_list, img_name_list = self._get_all_image_dirs(folder_name, keywords)
 
-                            satisfy = askyesnocancel('Import confirm', 'Import all the following images? [Yes] to add, '
-                                                                       '[No] to re-input keywords, '
+                            satisfy = askyesnocancel('Import confirm', 'Import all the following images? '
+                                                                       '[Yes] to add, [No] to re-input keywords, '
                                                                        '[Cancel] to stop adding\n'+str(img_name_list))
                             if satisfy is None:  # stop adding
                                 ask_keyword = False
                             else:
                                 if satisfy:  # confirm to add
                                     img_mode_choice = askyesnocancel('Default mode Selection',
-                                                                     'The default tree marking mode is Edge Marking[Yes] or Clicking[No] or ignore[Cancel]?')
+                                                                     'The default tree marking mode is '
+                                                                     'Edge Marking[Yes] or Clicking[No] '
+                                                                     'or ignore[Cancel]?')
                                     if img_mode_choice:
                                         img_mode = 0
                                     else:
@@ -260,10 +264,12 @@ class Pano2BA(Tk):
                         else:  # cancel adding
                             ask_keyword = False
             else:  # add single img
-                img_dir = askopenfilename(title='Choose an image', filetypes=[('JPEG', '.jpeg, .jpg'), ('PNG', '.png')])
+                img_dir = askopenfilename(title='Choose an image',
+                                          filetypes=[('JPEG', '.jpeg, .jpg'), ('PNG', '.png')])
                 if img_dir != '':
                     img_mode_choice = askyesnocancel('Default mode Selection',
-                                              'The default tree marking mode is Edge Marking[Yes] or Clicking[No] or ignore[Cancel]?')
+                                                     'The default tree marking mode is Edge Marking[Yes]'
+                                                     ' or Clicking[No] or ignore[Cancel]?')
                     if img_mode_choice is None:  # Cancel
                         # for Lab use only
                         if '_r' in os.path.basename(img_dir):
@@ -560,7 +566,8 @@ class MenuBar(Frame):
     def new_project(self, event=None):
         ans = True
         if not app.saved:
-            ans = askyesnocancel('Warning', 'Changes not saved, save current changes[Y], discard changes[N], or cancel?')
+            ans = askyesnocancel('Warning',
+                                 'Changes not saved, save current changes[Y], discard changes[N], or cancel?')
 
         if ans is None:  # cancel
             return
@@ -582,8 +589,8 @@ class MenuBar(Frame):
                 app.update_progress(50)
 
                 db.create_db(project_dir)
-                if os.path.exists('~default.sqlite'):
-                    os.remove('~default.sqlite')
+                if os.path.exists('~$default.sqlite'):
+                    os.remove('~$default.sqlite')
                 app.update_progress(70)
 
                 app.img_table.delete(*app.img_table.get_children())
@@ -605,7 +612,8 @@ class MenuBar(Frame):
         elif ans:  # save changes
             self.save_project()
 
-        project_dir = askopenfilename(title='Open project', initialdir='.', filetypes=[('Pano2ba project', '.sqlite')])
+        project_dir = askopenfilename(title='Open project', initialdir='.',
+                                      filetypes=[('Pano2ba project', '.sqlite')])
         if project_dir != '':
             former_db_path = db.db_path
             db.change_db(project_dir)
@@ -627,8 +635,8 @@ class MenuBar(Frame):
                 app.update_title()
                 app.update_progress(10)
 
-                if os.path.exists('~default.sqlite'):
-                    os.remove('~default.sqlite')
+                if os.path.exists('~$default.sqlite'):
+                    os.remove('~$default.sqlite')
                 app.update_progress(15)
 
                 # loading img_info
@@ -719,7 +727,11 @@ class MenuBar(Frame):
                 st = askfloat('start', 'please type the start baf value (>= 1)', minvalue=1, maxvalue=50)
                 ed = askfloat('end', 'Please type the end baf value (<=50)', minvalue=st, maxvalue=50)
                 step = askfloat('step', 'Please type the step of interval', minvalue=0.05, maxvalue=ed - st)
-                baf_list = list(arange(st, ed + step, step))
+                try:
+                    baf_list = list(arange(st, ed + step, step))
+                except TypeError:
+                    return
+
                 confirm = askyesnocancel('Confirm', 'Are you sure to export results related to the following BAFs? \n'
                                                     + str(baf_list) + '\n[Yes] to continue, [No] to reinput BAFs, '
                                                                       '[Cancel] to cancel export')
@@ -745,8 +757,8 @@ class MenuBar(Frame):
             col = 2
             for baf in baf_list:
                 plot_info.write(0, col, label='BA(baf=' + str(baf) + ')')
-                plot_info.write(0, col+1, label='In Tree Num')
-                col += 2
+                #plot_info.write(0, col+1, label='In Tree Num')
+                col += 1 #col += 2
 
             for i in range(img_length):
                 plot_info.write(i + 1, 0, img_data['img_id'][i])
@@ -849,9 +861,11 @@ class ScrolledCanvas(Frame):
         im = Image.fromarray(imarray.astype('uint8')).convert("RGBA")
         photo_im = PhotoImage(im)
         self.shape_ids['canvas_img'] = self.canvas.create_image(0, 0, image=photo_im, anchor='nw')
-        self.shape_ids['r'] = self.canvas.create_rectangle(0, 0, 5, 5, fill='white', outline='black', state='hidden')
+        self.shape_ids['r'] = self.canvas.create_rectangle(0, 0, 5, 5, fill='white',
+                                                           outline='black', state='hidden')
         self.click_ids['r'] = self.canvas_create_octagon(self.img_width / 2, self.img_height / 2,
-                                                         fill='white', outline='yellow', stipple='gray12', state='hidden')
+                                                         fill='white', outline='yellow',
+                                                         stipple='gray12', state='hidden')
 
     # ========================
     #  functions used outside
@@ -943,7 +957,8 @@ class ScrolledCanvas(Frame):
                 point2 = self.canvas.create_oval(x2 - 5, y2 - 5, x2 + 5, y2 + 5, fill='yellow', outline='black')
                 text_x = (x1 + x2) / 2
                 text_y = (y1 + y2) / 2
-                text = self.canvas.create_text(text_x, text_y, text=str(tree_row+1), fill='black', font=('Times', '12', 'bold'))
+                text = self.canvas.create_text(text_x, text_y, text=str(tree_row+1),
+                                               fill='yellow', font=('Times', '12', 'bold'))
 
                 self.shape_ids['point1'].append(point1)
                 self.shape_ids['point2'].append(point2)
@@ -960,7 +975,8 @@ class ScrolledCanvas(Frame):
                 y = app.tree_info['y'][tree_row] * self.zoom_ratio
 
                 octagon = self.canvas_create_octagon(x, y, fill='white', outline='black')
-                text = self.canvas.create_text(x, y, text=str(tree_row + 1), fill='black', font=('Times', '12', 'bold'))
+                text = self.canvas.create_text(x, y, text=str(tree_row + 1), fill='black',
+                                               font=('Times', '12', 'bold'))
 
                 # click_ids = {'point':[], 'text':[], 'canvas_img':None, 'r':None}
                 self.click_ids['point'].append(octagon)
@@ -1040,7 +1056,8 @@ class ScrolledCanvas(Frame):
             R = r / cos(pi / 16)
             top = list(self.top_iteration(16, x, y, R))
             oct = self.canvas.create_polygon(*top, fill=fill, outline=outline, state=state, stipple=stipple)
-            #oct = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill='LightBlue', outline='yellow', state=state, stipple="gray12")
+            #oct = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill='LightBlue',
+            #                              outline='yellow', state=state, stipple="gray12")
 
         return oct
 
@@ -1078,9 +1095,12 @@ class ScrolledCanvas(Frame):
                     number = len(self.shape_ids['point1'])
 
                     line = self.canvas.create_line(x, y, x, y, fill='red', width=3)
-                    point1 = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill='yellow', outline='black')
-                    point2 = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill='yellow', outline='black')
-                    text = self.canvas.create_text(x, y, text=str(number + 1), fill='yellow', font=('Times', '12', 'bold'))
+                    point1 = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5,
+                                                     fill='yellow', outline='black')
+                    point2 = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5,
+                                                     fill='yellow', outline='black')
+                    text = self.canvas.create_text(x, y, text=str(number + 1),
+                                                   fill='yellow', font=('Times', '12', 'bold'))
 
                     self.moving['fixed_p'] = [x, y]
                     self.moving['line'] = line
@@ -1111,8 +1131,10 @@ class ScrolledCanvas(Frame):
                 app.make_unsaved()
 
                 number = len(self.click_ids['point'])
-                point = self.canvas_create_octagon(x, y, fill='white', outline='black', state='normal', stipple='')
-                text = self.canvas.create_text(x, y, text=str(number + 1), fill='black', font=('Times', '12', 'bold'))
+                point = self.canvas_create_octagon(x, y, fill='white', outline='black',
+                                                   state='normal', stipple='')
+                text = self.canvas.create_text(x, y, text=str(number + 1), fill='black',
+                                               font=('Times', '12', 'bold'))
 
                 self.click_ids['point'].append(point)
                 self.click_ids['text'].append(text)
@@ -1128,7 +1150,8 @@ class ScrolledCanvas(Frame):
                 self._update_shape_info(x, y)
             else:  # make a minimum bar follow mouse
                 if self.reference_bar:
-                    self.canvas.coords(self.shape_ids['r'], [x, y - 5, x + self.min_width * self.zoom_ratio, y])
+                    self.canvas.coords(self.shape_ids['r'],
+                                       [x, y - 5, x + self.min_width * self.zoom_ratio, y])
         else:   # click mode
             self.canvas_coords_octagon(self.click_ids['r'], x, y)
 
@@ -1170,9 +1193,11 @@ class ScrolledCanvas(Frame):
             x = self.canvas.canvasx(event.x)
             y = self.canvas.canvasy(event.y)
             if app.mode.get() == 0:
-                self._update_tree_infos(app.tree_info['tree_id'][self.moving['tree_row']], x0, y0, x, y, mode='edit')
+                self._update_tree_infos(app.tree_info['tree_id'][self.moving['tree_row']],
+                                        x0, y0, x, y, mode='edit')
             else:
-                self._update_tree_infos_cmode(app.tree_info['click_id'][self.moving_cmode['tree_row']], x, y, mode='edit')
+                self._update_tree_infos_cmode(app.tree_info['click_id'][self.moving_cmode['tree_row']],
+                                              x, y, mode='edit')
                 self.canvas.itemconfigure(self.moving_cmode['move_p'], outline='black', stipple='')
             self.move_point = False
             app.make_unsaved()
@@ -1213,7 +1238,8 @@ class ScrolledCanvas(Frame):
                 if not self.reference_bar:
                     self.reference_bar = True
                     self.min_width = in_tree_pixel(1, self.img_width)
-                    self.canvas.coords(self.shape_ids['r'], [x, y - 5, x + self.min_width * self.zoom_ratio, y])
+                    self.canvas.coords(self.shape_ids['r'],
+                                       [x, y - 5, x + self.min_width * self.zoom_ratio, y])
                     self.canvas.itemconfig(self.shape_ids['r'], state='normal')
                 else:
                     self.reference_bar = False
@@ -1246,7 +1272,8 @@ class ScrolledCanvas(Frame):
                     canvas_width = self.canvas.winfo_width()
                     canvas_height = self.canvas.winfo_height()
                     img_width, img_height = self.save_image.size
-                    if img_width * zoom_rate < canvas_width or img_height * zoom_rate < canvas_height:  # can't small any more
+                    if img_width * zoom_rate < canvas_width or img_height * zoom_rate < canvas_height:
+                        # can't small any more
                         app.update_title()
                     else:  # proper zoom operation
                         app.update_progress(10)
@@ -1542,7 +1569,7 @@ if __name__ == '__main__':
     import tkinter
     tkinter.CallWrapper = TkErrorCatcher
     app = Pano2BA()
-    db = DataBase('~default.sqlite')
+    db = DataBase('~$default.sqlite')
     try:
         app.mainloop()
     except Exception as e:
