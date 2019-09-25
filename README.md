@@ -64,29 +64,63 @@ that is the reason why we develop this software.
 1. `mouse-wheel-click` on image name: change all images' default BAF values at once.
 
 ### 3. Tree management
+
+This software has two different tree marking modes (Edge Marking and Target Count):
+
+![](images/readme/ui190509.jpg)
+
+Two different mode can be switched by clicking the Tree Management Panel:
+
+![](images/readme/switch.gif)
+
+
+
 1. Add trees
+
     1. `ctrl` + `mousewhell`: zoom images to proper size, the software title will tell you current zoom ratio, 
-    release `ctrl` to finish zoom in)
+        release `ctrl` to finish zoom in)
+
     1. Press `Space` switching to adding tree mode (cursor will change to +)
+
+    1. Press `r` to display/hide a minimum tree reference bar (baf=1.0) hover mouse to determine current tree should add or not
+
+	**---Edge Marking Mode---**
+
     1. `left-click` to add the first point of tree boundary
+    
     1. `move` to another boundary, `left-click` for another boundary point
+       
         * if the line between two points color is **red**, currently is **out** tree
         * if line color is **blue**, it is a **in** tree
         * default, the line is locked to be horizontal
         * press `shift` to unlock and create lines for leaned trees
-    1. Press `r` to display/hide a minimum tree reference bar (baf=1.0) hover mouse to determine current tree should add or not
-    
+
     ![add tree](images/readme/add_tree.gif)
+    
+    **---Target Counting Mode---**
+    `left-click` to mark those tree bigger than reference octagon
+    ![](images/readme/add_tree_t.gif)
+
 2. Edit trees
+    
+    **---Edge Mode---**
+
     1. `left-click` the tree record, the image will center this tree line
-    1. drag the boundary point to change position (hold `shift` for leaned tree)
+1. drag the boundary point to change position (hold `shift` for leaned tree)
     
     ![edit tree](images/readme/edit_tree.gif)
+    
+    **---Target Mode---**
+    
+    Click and Drag Directly
+    
+    ![](images/readme/edit_tree_t.gif)
+    
 3. Delete trees
     1. select the tree record and press `delete`
     1. a delete confirmation dialog will appear
-    
-    ![del tree](images/readme/del_trees.gif)
+
+    ![del tree](images/readme/del_tree.gif)
 
 ## Updates
 Beta1.0: Finish all functions mentioned above 
